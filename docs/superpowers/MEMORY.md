@@ -1,0 +1,1 @@
+- [Parcel Report Design](specs/2026-07-29-parcel-report-design.md) — Detailed printable multi-page reports for septic, home site, and hobby farming evaluation

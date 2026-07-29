@@ -53,6 +53,12 @@ def report(lon: float, lat: float, layers: str = "flood,wetlands,slope,roads,soi
     return analysis.parcel_report(lon, lat, include=include)
 
 
+@app.get("/report")
+def report_page() -> FileResponse:
+    """Serve the report template (populated by frontend JavaScript)."""
+    return FileResponse(STATIC / "report.html")
+
+
 @app.get("/api/search/address")
 def search_address(q: str, layers: str = "flood,wetlands,slope,roads,soils"):
     if len(q.strip()) < 5:

@@ -100,6 +100,7 @@ a{color:var(--accent)}
                onkeydown="if(event.key==='Enter')searchParcel()">
         <button class="ghost" style="flex:0 0 70px;margin:0" onclick="searchParcel()">Find</button>
       </div>
+      <button class="go" id="generate-report-btn" onclick="openReport()" style="display:none;">Generate Report</button>
       <div id="parcel-out"></div>
     </div>
 
@@ -132,7 +133,7 @@ a{color:var(--accent)}
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
-let CFG = null, selected = null, drawn = null, screenRows = [];
+let CFG = null, selected = null, drawn = null, screenRows = [], lastParcelCoords = null;
 
 const map = L.map('map', {zoomControl:true}).setView([35.86,-86.59], 13);
 const layersCtl = L.control.layers(null, null, {position:'topleft'}).addTo(map);
@@ -196,6 +197,8 @@ async function loadParcel(lon, lat){
   catch(e){ out.innerHTML = `<p class="err">Request failed: ${esc(e.message)}</p>`; return; }
   if (!r.found){ out.innerHTML = `<p class="muted">${esc(r.message)}</p>`; return; }
   selected = r;
+  lastParcelCoords = { lon, lat };
+  document.getElementById('generate-report-btn').style.display = 'block';
   parcelLayer.addData(r.geometry);
   map.fitBounds(parcelLayer.getBounds(), {padding:[40,40], maxZoom:17});
   renderParcel(r);
@@ -569,6 +572,15 @@ function renderAbout(){
   <div class="card"><p class="muted">Every response is cached on disk so repeat lookups are instant
   and the public servers are not hammered.</p>
   <button class="ghost" onclick="fetch('/api/cache',{method:'DELETE'}).then(()=>alert('Cache cleared'))">Clear cache</button></div>`;
+}
+
+function openReport(){
+  if (!lastParcelCoords){
+    alert('Please click a parcel on the map first.');
+    return;
+  }
+  const { lon, lat } = lastParcelCoords;
+  window.open(`/report?lon=${lon}&lat=${lat}`, '_blank');
 }
 </script>
 <div class="legend">Click a parcel &middot; or use the draw tools to screen an area</div>

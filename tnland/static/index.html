@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TN Land Tool</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<style>
+:root{
+  --bg:#12140f; --panel:#1b1e17; --panel2:#232720; --line:#333a2c;
+  --text:#e8ebe2; --dim:#98a08c; --accent:#8fbf52; --accent2:#6d9a3a;
+  --bad:#e2694f; --warn:#e0b040; --ok:#8fbf52; --info:#7fa9d0;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text)}
+#app{display:flex;height:100%}
+#map{flex:1;background:#0c0e0a}
+#side{width:430px;min-width:430px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden}
+header{padding:14px 16px;border-bottom:1px solid var(--line)}
+header h1{margin:0;font-size:15px;letter-spacing:.3px}
+header p{margin:3px 0 0;font-size:11.5px;color:var(--dim)}
+.tabs{display:flex;border-bottom:1px solid var(--line);background:var(--panel2)}
+.tabs button{flex:1;background:none;border:0;border-bottom:2px solid transparent;color:var(--dim);padding:10px 4px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.tabs button.on{color:var(--accent);border-bottom-color:var(--accent)}
+.pane{flex:1;overflow-y:auto;padding:14px 16px;display:none}
+.pane.on{display:block}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);margin:20px 0 8px;font-weight:600}
+h2:first-child{margin-top:0}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:11px 13px;margin-bottom:9px}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:12.5px}
+.kv span:first-child{color:var(--dim);flex-shrink:0}
+.kv span:last-child{text-align:right;word-break:break-word}
+.big{font-size:22px;font-weight:600;letter-spacing:-.3px}
+.sub{font-size:11.5px;color:var(--dim)}
+.flag{display:flex;gap:9px;padding:7px 0;font-size:12.5px;border-bottom:1px solid var(--line)}
+.flag:last-child{border-bottom:0}
+.dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex-shrink:0}
+.dot.bad{background:var(--bad)} .dot.warn{background:var(--warn)}
+.dot.ok{background:var(--ok)} .dot.info{background:var(--info)}
+label{display:block;font-size:11.5px;color:var(--dim);margin:9px 0 3px}
+input,select{width:100%;background:#0f110c;border:1px solid var(--line);color:var(--text);border-radius:5px;padding:7px 9px;font:inherit;font-size:12.5px}
+input[type=checkbox]{width:auto;margin-right:7px;accent-color:var(--accent)}
+.chk{display:flex;align-items:center;font-size:12.5px;color:var(--text);margin:7px 0}
+.row{display:flex;gap:8px}.row>*{flex:1}
+button.go{width:100%;background:var(--accent2);color:#0d1108;border:0;border-radius:6px;padding:10px;font:inherit;font-weight:600;font-size:13px;cursor:pointer;margin-top:13px}
+button.go:hover{background:var(--accent)}
+button.go:disabled{opacity:.45;cursor:default}
+button.ghost{background:none;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:8px;font:inherit;font-size:12px;cursor:pointer;width:100%;margin-top:7px}
+button.ghost:hover{border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+th{text-align:left;color:var(--dim);font-weight:600;padding:5px 5px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+td{padding:5px;border-bottom:1px solid var(--line);vertical-align:top}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--panel2)}
+.muted{color:var(--dim);font-size:12px}
+.note{font-size:11px;color:var(--dim);line-height:1.5;margin-top:7px;padding-left:9px;border-left:2px solid var(--line)}
+.err{color:var(--bad);font-size:12px}
+a{color:var(--accent)}
+.bar{height:7px;background:#0f110c;border-radius:4px;overflow:hidden;display:flex;margin:5px 0 2px}
+.bar i{display:block;height:100%}
+.spin{text-align:center;color:var(--dim);padding:26px 0;font-size:12.5px}
+.pill{display:inline-block;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:2px 9px;font-size:11px;color:var(--dim);margin:2px 3px 2px 0}
+.leaflet-container{background:#0c0e0a}
+.legend{position:absolute;bottom:22px;left:12px;z-index:900;background:rgba(20,23,17,.92);border:1px solid var(--line);border-radius:6px;padding:8px 11px;font-size:11px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <div id="side">
+    <header>
+      <h1>Tennessee Land Tool</h1>
+      <p>Free public data &middot; Comptroller, county GIS, FEMA, USFWS, USGS, NRCS</p>
+    </header>
+    <div class="tabs">
+      <button data-pane="parcel" class="on">Parcel</button>
+      <button data-pane="screen">Screen</button>
+      <button data-pane="comps">Comps</button>
+      <button data-pane="about">About</button>
+    </div>
+
+    <div class="pane on" id="pane-parcel">
+      <p class="muted">Click any parcel on the map, or search below.</p>
+      <label>Street address &mdash; or "0 Road Name" for vacant land</label>
+      <div class="row">
+        <input id="q-addr" placeholder="0 McBroom Branch Rd, Baxter, TN 38544"
+               onkeydown="if(event.key==='Enter')searchAddress()">
+        <button class="ghost" style="flex:0 0 70px;margin:0" onclick="searchAddress()">Go</button>
+      </div>
+      <label>Owner name</label>
+      <div class="row">
+        <input id="q-owner" placeholder="e.g. SMITH FAMILY TRUST"
+               onkeydown="if(event.key==='Enter')searchOwner()">
+        <button class="ghost" style="flex:0 0 70px;margin:0" onclick="searchOwner()">Find</button>
+      </div>
+      <label>Parcel ID or GISLINK</label>
+      <div class="row">
+        <input id="q-parcel" placeholder="e.g. 040 00504 000"
+               onkeydown="if(event.key==='Enter')searchParcel()">
+        <button class="ghost" style="flex:0 0 70px;margin:0" onclick="searchParcel()">Find</button>
+      </div>
+      <div id="parcel-out"></div>
+    </div>
+
+    <div class="pane" id="pane-screen">
+      <p class="muted">Draw a box or polygon on the map, then filter.</p>
+      <div class="row">
+        <div><label>Min acres</label><input id="f-min" type="number" step="0.1" placeholder="any"></div>
+        <div><label>Max acres</label><input id="f-max" type="number" step="0.1" placeholder="any"></div>
+      </div>
+      <div class="row">
+        <div><label>Min appraised $</label><input id="f-minval" type="number" placeholder="any"></div>
+        <div><label>Max appraised $</label><input id="f-maxval" type="number" placeholder="any"></div>
+      </div>
+      <label class="chk"><input type="checkbox" id="f-raw" checked> Raw land only (vacant, ag, timber)</label>
+      <label class="chk"><input type="checkbox" id="f-vacant"> Strictly vacant land-use codes</label>
+      <label class="chk"><input type="checkbox" id="f-nostruct"> No structures on record</label>
+      <label class="chk"><input type="checkbox" id="f-ooc"> Owner mailing outside county</label>
+      <button class="go" id="btn-screen" onclick="runScreen()" disabled>Draw an area first</button>
+      <div id="screen-out"></div>
+    </div>
+
+    <div class="pane" id="pane-comps">
+      <div id="comps-out"><p class="muted">Select a parcel first, then run comps.</p></div>
+    </div>
+
+    <div class="pane" id="pane-about"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script>
+let CFG = null, selected = null, drawn = null, screenRows = [];
+
+const map = L.map('map', {zoomControl:true}).setView([35.86,-86.59], 13);
+const layersCtl = L.control.layers(null, null, {position:'topleft'}).addTo(map);
+
+fetch('/api/config').then(r=>r.json()).then(cfg=>{
+  CFG = cfg;
+  let first = true;
+  for (const [key,b] of Object.entries(cfg.basemaps)) {
+    const layer = L.tileLayer(b.url, {maxZoom:b.maxZoom||19, maxNativeZoom:b.maxZoom||19, attribution:b.attribution});
+    layersCtl.addBaseLayer(layer, b.label);
+    if (first) { layer.addTo(map); first = false; }
+  }
+  renderAbout();
+});
+
+const parcelLayer = L.geoJSON(null,{style:{color:'#8fbf52',weight:2.5,fillOpacity:.12}}).addTo(map);
+const compsLayer = L.layerGroup().addTo(map);
+const hitLayer = L.layerGroup().addTo(map);
+
+const drawnItems = new L.FeatureGroup().addTo(map);
+map.addControl(new L.Control.Draw({
+  edit:{featureGroup:drawnItems},
+  draw:{polyline:false,circle:false,circlemarker:false,marker:false,
+        rectangle:{shapeOptions:{color:'#e0b040',weight:2,fillOpacity:.05}},
+        polygon:{shapeOptions:{color:'#e0b040',weight:2,fillOpacity:.05}}}
+}));
+map.on(L.Draw.Event.CREATED, e=>{
+  drawnItems.clearLayers(); drawnItems.addLayer(e.layer);
+  drawn = e.layer.toGeoJSON().geometry;
+  const btn = document.getElementById('btn-screen');
+  btn.disabled = false; btn.textContent = 'Search this area';
+  showPane('screen');
+});
+
+map.on('click', e=>{
+  if (map._drawingActive) return;
+  loadParcel(e.latlng.lng, e.latlng.lat);
+});
+
+document.querySelectorAll('.tabs button').forEach(b=>{
+  b.onclick = ()=>showPane(b.dataset.pane);
+});
+function showPane(name){
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.pane===name));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on',p.id==='pane-'+name));
+}
+
+const money = n => n==null ? '--' : '$'+Math.round(n).toLocaleString();
+const num = (n,d=2) => n==null ? '--' : Number(n).toLocaleString(undefined,{maximumFractionDigits:d});
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function kv(k,v){ return `<div class="kv"><span>${k}</span><span>${v}</span></div>`; }
+
+async function loadParcel(lon, lat){
+  const out = document.getElementById('parcel-out');
+  showPane('parcel');
+  out.innerHTML = '<div class="spin">Pulling parcel, flood, wetlands, slope, roads and soils&hellip;</div>';
+  parcelLayer.clearLayers(); compsLayer.clearLayers();
+  let r;
+  try { r = await (await fetch(`/api/parcel?lon=${lon}&lat=${lat}`)).json(); }
+  catch(e){ out.innerHTML = `<p class="err">Request failed: ${esc(e.message)}</p>`; return; }
+  if (!r.found){ out.innerHTML = `<p class="muted">${esc(r.message)}</p>`; return; }
+  selected = r;
+  parcelLayer.addData(r.geometry);
+  map.fitBounds(parcelLayer.getBounds(), {padding:[40,40], maxZoom:17});
+  renderParcel(r);
+  renderCompsPane();
+}
+
+function renderParcel(r){
+  const p = r.parcel, acres = p.deeded_acres || p.gis_acres;
+  let h = '';
+  if (r.matched_address) h += `<div class="note">Matched <strong>${esc(r.matched_address)}</strong>
+    via ${esc(r.geocoder||'')}${r.other_matches&&r.other_matches.length?
+    ` &middot; ${r.other_matches.length} other geocoder match(es) ignored`:''}</div>`;
+  h += `<div class="card">
+    <div class="big">${esc(p.owner || 'Unknown owner')}</div>
+    <div class="sub">${esc(p.situs_address || 'No address on record')} &middot; ${esc(p.county||'')} County</div>
+    <div style="margin-top:9px">
+      ${kv('Parcel ID', esc(p.parcel_id||'--'))}
+      ${kv('Deeded acres', num(p.deeded_acres))}
+      ${kv('GIS acres', num(p.gis_acres))}
+      ${p.land_use ? kv('Land use', esc(p.land_use)+' <span class="sub">('+esc(p.land_use_code)+')</span>') : ''}
+      ${p.zoning ? kv('Zoning', esc(p.zoning)) : ''}
+      ${p.appraisal!=null ? kv('Appraised', money(p.appraisal)) : ''}
+      ${p.appraised_per_acre!=null ? kv('Per acre', money(p.appraised_per_acre)) : ''}
+      ${p.land_value!=null ? kv('Land value', money(p.land_value)) : ''}
+      ${p.improvement_value!=null ? kv('Improvements', money(p.improvement_value)) : ''}
+      ${p.sale_price!=null ? kv('Last sale', money(p.sale_price)+' <span class="sub">'+esc(p.sale_date||'')+'</span>') : ''}
+      ${p.owner_mailing ? kv('Owner mailing', esc(p.owner_mailing)) : ''}
+    </div>
+    ${p.tpad_url ? `<a href="${esc(p.tpad_url)}" target="_blank" class="sub">Open full assessment record in TPAD &rarr;</a>` : ''}
+  </div>`;
+
+  if (r.flags && r.flags.length){
+    h += '<h2>At a glance</h2><div class="card">';
+    for (const f of r.flags) h += `<div class="flag"><div class="dot ${f.level}"></div><div>${esc(f.text)}</div></div>`;
+    h += '</div>';
+  }
+
+  const u = p.utilities || {};
+  if (u.water_sewer || u.electric || u.gas){
+    h += '<h2>Utilities on record</h2><div class="card">'
+      + kv('Water / sewer', esc(u.water_sewer||'--'))
+      + kv('Electric', esc(u.electric||'--'))
+      + kv('Gas', esc(u.gas||'--')) + '</div>';
+  }
+
+  const ctx = p.state_context || {};
+  const chips = [];
+  if (ctx.major_road_frontage) chips.push('Major road frontage: '+ctx.major_road_frontage);
+  if (ctx.interstate_within_10min) chips.push('Interstate &lt;10 min: '+ctx.interstate_within_10min);
+  if (ctx.retail_within_15min) chips.push('Retail &lt;15 min: '+ctx.retail_within_15min);
+  if (ctx.borders_railroad) chips.push('Borders rail: '+ctx.borders_railroad);
+  if (ctx.population_growth_area) chips.push('Growth area: '+ctx.population_growth_area);
+  if (chips.length) h += '<h2>State context flags</h2><div class="card">'
+    + chips.map(c=>`<span class="pill">${c}</span>`).join('') + '</div>';
+
+  h += section('Terrain', r.terrain, t=>{
+    const d = t.distribution || {};
+    const colors = {'0-5%':'#8fbf52','5-10%':'#b6c94a','10-15%':'#e0b040','15-25%':'#d98a45','25%+':'#e2694f'};
+    const bar = Object.entries(d).map(([k,v])=>`<i style="width:${v}%;background:${colors[k]}" title="${k}: ${v}%"></i>`).join('');
+    return kv('Character', esc(t.terrain))
+      + kv('Mean slope', t.mean_slope_pct+'% <span class="sub">('+t.mean_slope_deg+'&deg;)</span>')
+      + kv('Under 15% slope', t.buildable_pct+'% of parcel')
+      + kv('Elevation', num(t.elevation_min_ft,0)+' &ndash; '+num(t.elevation_max_ft,0)+' ft')
+      + kv('Relief', num(t.relief_ft,0)+' ft')
+      + `<div class="bar">${bar}</div>`
+      + `<div class="sub">${Object.keys(d).join(' &middot; ')}</div>`;
+  });
+
+  h += section('Flood', r.flood, f=>{
+    if (!f.zones || !f.zones.length) return `<div class="muted">${esc(f.note||'No mapped flood zones.')}</div>`;
+    return kv('Special flood hazard area', f.sfha_pct+'% of parcel')
+      + f.zones.map(z=>kv('Zone '+esc(z.zone)+(z.subtype?' <span class="sub">'+esc(z.subtype)+'</span>':''),
+          num(z.acres)+' ac ('+z.pct+'%)')).join('');
+  });
+
+  h += section('Wetlands', r.wetlands, w=>{
+    if (!w.types || !w.types.length) return '<div class="muted">No NWI wetlands mapped on this parcel.</div>';
+    return kv('Total', num(w.acres)+' ac ('+w.pct+'%)')
+      + w.types.map(t=>kv(esc(t.type), num(t.acres)+' ac ('+t.pct+'%)')).join('');
+  });
+
+  h += section('Road access', r.access, a=>{
+    let s = kv('Assessment', esc(a.summary));
+    if (a.source) s += kv('Source', esc(a.source));
+    if (a.frontage_ft) s += kv('Total frontage', num(a.frontage_ft,0)+' ft');
+    if (a.nearest_road_ft!=null) s += kv('Nearest road', num(a.nearest_road_ft,0)+' ft');
+    if (a.roads && a.roads.length) s += '<div style="margin-top:7px">'
+      + a.roads.slice(0,6).map(rd=>kv(esc(rd.name)+' <span class="sub">'+esc(rd.type)+'</span>',
+          rd.frontage_ft>0 ? num(rd.frontage_ft,0)+' ft frontage' : num(rd.distance_ft,0)+' ft away')).join('')
+      + '</div>';
+    return s;
+  });
+
+  h += section('Soils', r.soils, s=>{
+    const sum = s.summary||{};
+    let out = kv('Map units', sum.map_unit_count)
+      + kv('Prime farmland', sum.has_prime_farmland ? 'Yes' : 'No')
+      + kv('Hydric soils', sum.has_hydric_soil ? 'Yes' : 'No');
+    out += '<div style="margin-top:7px">' + (s.units||[]).slice(0,8).map(u=>
+      kv(esc(u.symbol||'')+' <span class="sub">'+esc(u.name||'')+'</span>',
+         esc(u.drainage||'--'))).join('') + '</div>';
+    return out;
+  });
+
+  h += `<div class="note">${esc(r.disclaimer)}</div>`;
+  if (p.notes && p.notes.length) h += p.notes.map(n=>`<div class="note">${esc(n)}</div>`).join('');
+  document.getElementById('parcel-out').innerHTML = h;
+}
+
+function section(title, data, body){
+  if (!data) return '';
+  let inner;
+  if (!data.available) inner = `<div class="err">${esc(data.error||'Unavailable')}</div>`;
+  else inner = body(data);
+  return `<h2>${title}</h2><div class="card">${inner}
+    ${data.note ? `<div class="note">${esc(data.note)}</div>`:''}</div>`;
+}
+
+async function searchAddress(){
+  const q = document.getElementById('q-addr').value.trim();
+  if (q.length < 5) return;
+  const out = document.getElementById('parcel-out');
+  showPane('parcel');
+  out.innerHTML = '<div class="spin">Geocoding, then pulling the full report&hellip;</div>';
+  parcelLayer.clearLayers(); compsLayer.clearLayers(); hitLayer.clearLayers();
+  let r;
+  try { r = await (await fetch('/api/search/address?q='+encodeURIComponent(q))).json(); }
+  catch(e){ out.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+
+  if (r.kind === 'road' && r.found){ renderRoad(r); return; }
+
+  if (!r.found){
+    let h = `<p class="muted">${esc(r.message||'Not found.')}</p>`;
+    if (r.candidates && r.candidates.length){
+      h += '<table><thead><tr><th>Address</th><th>Owner</th></tr></thead><tbody>'
+        + r.candidates.filter(c=>c.lat&&c.lon).map(c=>
+            `<tr onclick="loadParcel(${c.lon},${c.lat})"><td>${esc(c.address||'')}
+             <div class="sub">${esc(c.county||'')}</div></td>
+             <td>${esc(c.owner||'')}</td></tr>`).join('')
+        + '</tbody></table>';
+    }
+    out.innerHTML = h;
+    return;
+  }
+
+  selected = r;
+  parcelLayer.addData(r.geometry);
+  map.fitBounds(parcelLayer.getBounds(), {padding:[40,40], maxZoom:17});
+  renderParcel(r);
+  renderCompsPane();
+}
+
+const roadLayer = L.layerGroup().addTo(map);
+
+function renderRoad(r){
+  const out = document.getElementById('parcel-out');
+  roadLayer.clearLayers(); hitLayer.clearLayers(); parcelLayer.clearLayers();
+
+  L.geoJSON(r.road_geometry, {style:{color:'#e0b040',weight:4,opacity:.85}}).addTo(roadLayer);
+  const pts = [];
+  r.results.forEach(row=>{
+    if (!row.lat || !row.lon) return;
+    const m = L.circleMarker([row.lat,row.lon],
+      {radius:row.is_raw_land?6:4,
+       color:row.is_raw_land?'#8fbf52':'#7a8270',
+       fillOpacity:row.is_raw_land?.9:.5})
+      .bindTooltip(`${esc(row.owner||'')}<br>${num(row.acres)} ac`)
+      .on('click',()=>loadParcel(row.lon,row.lat));
+    m.addTo(hitLayer); pts.push([row.lat,row.lon]);
+  });
+  if (pts.length) map.fitBounds(pts,{padding:[40,40]});
+
+  out.innerHTML = `<div class="card">
+      <div class="big">${r.count} parcels</div>
+      <div class="sub">on ${esc((r.road_names||[]).slice(0,3).join(', '))}
+        &middot; ${r.road_length_miles} mi mapped
+        &middot; ${r.raw_land_count} vacant / ag / timber</div>
+      <div class="note">${esc(r.note||'')}</div>
+    </div>
+    <h2>Parcels on this road</h2>
+    <p class="sub">Green = vacant, agricultural or timber. Sorted largest first.
+       Click a row to run the full report.</p>
+    <table><thead><tr><th>Owner</th><th>Acres</th><th>Use</th></tr></thead><tbody>`
+    + r.results.map(row=>`<tr onclick="loadParcel(${row.lon},${row.lat})">
+        <td>${esc(row.owner||'--')}<div class="sub">${esc(row.situs_address||row.parcel_id||'')}</div></td>
+        <td>${num(row.acres)}</td>
+        <td>${row.is_raw_land?'<span style="color:#8fbf52">&#9679;</span> ':''}${esc((row.land_use||'--').slice(0,18))}</td>
+      </tr>`).join('')
+    + '</tbody></table>';
+}
+
+async function searchOwner(){
+  const q = document.getElementById('q-owner').value.trim();
+  if (q.length < 3) return;
+  const out = document.getElementById('parcel-out');
+  out.innerHTML = '<div class="spin">Searching statewide owner index&hellip;</div>';
+  const r = await (await fetch('/api/search/owner?q='+encodeURIComponent(q))).json();
+  renderHits(r.results, out);
+}
+async function searchParcel(){
+  const q = document.getElementById('q-parcel').value.trim();
+  if (!q) return;
+  const out = document.getElementById('parcel-out');
+  out.innerHTML = '<div class="spin">Searching&hellip;</div>';
+  const r = await (await fetch('/api/search/parcel?q='+encodeURIComponent(q))).json();
+  renderHits(r.results, out);
+}
+function renderHits(rows, out){
+  if (!rows || !rows.length){ out.innerHTML = '<p class="muted">No matches.</p>'; return; }
+  hitLayer.clearLayers();
+  const pts = [];
+  rows.forEach(r=>{ if (r.lat && r.lon){
+    const m = L.circleMarker([r.lat,r.lon],{radius:5,color:'#e0b040',fillOpacity:.8}).addTo(hitLayer);
+    m.on('click',()=>loadParcel(r.lon,r.lat)); pts.push([r.lat,r.lon]);
+  }});
+  if (pts.length) map.fitBounds(pts,{padding:[40,40],maxZoom:14});
+  out.innerHTML = `<p class="muted">${rows.length} match${rows.length===1?'':'es'} &mdash; click a row.</p>`
+    + '<table><thead><tr><th>Owner</th><th>County</th><th>Acres</th></tr></thead><tbody>'
+    + rows.map(r=>`<tr onclick="loadParcel(${r.lon},${r.lat})"><td>${esc(r.owner||'')}<div class="sub">${esc(r.parcel_id||'')}</div></td><td>${esc(r.county||'')}</td><td>${num(r.acres)}</td></tr>`).join('')
+    + '</tbody></table>';
+}
+
+async function runScreen(){
+  if (!drawn) return;
+  const out = document.getElementById('screen-out');
+  const btn = document.getElementById('btn-screen');
+  btn.disabled = true; btn.textContent = 'Searching…';
+  out.innerHTML = '<div class="spin">Pulling parcels and joining assessment records&hellip;</div>';
+  const body = {
+    geometry: drawn,
+    min_acres: val('f-min'), max_acres: val('f-max'),
+    min_appraisal: val('f-minval'), max_appraisal: val('f-maxval'),
+    raw_land_only: document.getElementById('f-raw').checked,
+    vacant_only: document.getElementById('f-vacant').checked,
+    exclude_structures: document.getElementById('f-nostruct').checked,
+    owner_out_of_county: document.getElementById('f-ooc').checked
+  };
+  let r;
+  try{
+    r = await (await fetch('/api/screen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  }catch(e){ out.innerHTML = `<p class="err">${esc(e.message)}</p>`; btn.disabled=false; btn.textContent='Search this area'; return; }
+  btn.disabled = false; btn.textContent = 'Search this area';
+  screenRows = r.results || [];
+
+  hitLayer.clearLayers();
+  screenRows.forEach(row=>{ if(row.lat&&row.lon){
+    const m = L.circleMarker([row.lat,row.lon],{radius:4,color:'#8fbf52',fillOpacity:.85}).addTo(hitLayer);
+    m.on('click',()=>loadParcel(row.lon,row.lat));
+  }});
+
+  let h = `<div class="card"><div class="big">${r.matched.toLocaleString()}</div>
+    <div class="sub">of ${r.searched.toLocaleString()} parcels in ${num(r.area_acres,0)} acres searched</div></div>`;
+  if (r.truncated) h += '<div class="note">Result cap reached &mdash; draw a smaller area to be sure you have everything.</div>';
+  if (r.coverage_note) h += `<div class="note">${esc(r.coverage_note)}</div>`;
+  if (screenRows.length){
+    h += '<button class="ghost" onclick="exportCsv(false)">Download CSV</button>'
+       + '<button class="ghost" onclick="exportCsv(true)">Download CSV &mdash; with mailing address only</button>'
+       + '<h2>Results</h2><table><thead><tr><th>Owner</th><th>Acres</th><th>Appraised</th></tr></thead><tbody>'
+       + screenRows.slice(0,400).map(row=>`<tr onclick="loadParcel(${row.lon},${row.lat})">
+           <td>${esc(row.owner||'--')}<div class="sub">${esc(row.county||'')} &middot; ${esc(row.land_use||row.land_use_code||'')}</div></td>
+           <td>${num(row.acres)}</td><td>${row.appraisal!=null?money(row.appraisal):'--'}</td></tr>`).join('')
+       + '</tbody></table>';
+    if (screenRows.length>400) h += `<p class="sub">Showing first 400 of ${screenRows.length}; the CSV has all of them.</p>`;
+  }
+  out.innerHTML = h;
+}
+function val(id){ const v = document.getElementById(id).value; return v===''?null:Number(v); }
+
+async function exportCsv(requireMailing){
+  const resp = await fetch('/api/export.csv',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({rows:screenRows,dedupe:true,require_mailing:requireMailing})});
+  const blob = await resp.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'tn-parcels.csv'; a.click();
+}
+
+function renderCompsPane(){
+  const out = document.getElementById('comps-out');
+  if (!selected){ out.innerHTML = '<p class="muted">Select a parcel first.</p>'; return; }
+  const county = (selected.parcel.county||'').toUpperCase();
+  const supported = (CFG?.comps_counties||[]).map(c=>c.county);
+  if (!supported.includes(county)){
+    out.innerHTML = `<div class="card"><p class="muted">Sale prices are not available through a public API in
+      ${esc(selected.parcel.county||'this county')}.</p>
+      <p class="muted" style="margin-top:9px">Tennessee records actual sale consideration on the deed, but only
+      ${supported.map(c=>esc(c[0]+c.slice(1).toLowerCase())).join(', ')} publish it in a queryable service.
+      Everywhere else you can read sale history one parcel at a time in TPAD.</p>
+      ${selected.parcel.tpad_url?`<a href="${esc(selected.parcel.tpad_url)}" target="_blank">Open this parcel in TPAD &rarr;</a>`:''}
+      </div>`;
+    return;
+  }
+  out.innerHTML = `<div class="row">
+      <div><label>Radius (mi)</label><input id="c-rad" type="number" value="5" step="0.5"></div>
+      <div><label>Years back</label><input id="c-yrs" type="number" value="5"></div>
+    </div>
+    <label>Acreage tolerance (&plusmn;%)</label><input id="c-tol" type="number" value="60">
+    <button class="go" onclick="runComps()">Find comparable sales</button>
+    <div id="comps-res"></div>`;
+}
+
+async function runComps(){
+  const res = document.getElementById('comps-res');
+  res.innerHTML = '<div class="spin">Searching recorded sales&hellip;</div>';
+  compsLayer.clearLayers();
+  const body = {
+    geometry: selected.geometry,
+    county: (selected.parcel.county||'').toUpperCase(),
+    radius_miles: Number(document.getElementById('c-rad').value)||5,
+    years_back: Number(document.getElementById('c-yrs').value)||5,
+    acre_tolerance: (Number(document.getElementById('c-tol').value)||60)/100,
+    subject_acres: selected.parcel.deeded_acres || selected.parcel.gis_acres
+  };
+  const r = await (await fetch('/api/comps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+  if (!r.available || !r.count){
+    res.innerHTML = `<div class="card"><p class="muted">${esc(r.reason||'No comparable sales found.')}</p></div>`;
+    return;
+  }
+  (r.sales||[]).forEach(s=>{ if(s.centroid)
+    L.circleMarker([s.centroid[1],s.centroid[0]],{radius:5,color:'#7fa9d0',fillOpacity:.8})
+      .bindTooltip(`${money(s.sale_price)} &middot; ${num(s.acres)} ac &middot; ${money(s.price_per_acre)}/ac`)
+      .addTo(compsLayer);
+  });
+  res.innerHTML = `<div class="card">
+      <div class="big">${money(r.price_per_acre.median)}<span class="sub"> / acre median</span></div>
+      <div class="sub">${r.count} sales &middot; ${esc(r.basis)} &middot; ${esc(r.county)}</div>
+      <div style="margin-top:9px">
+      ${kv('Range (25th&ndash;75th)', money(r.price_per_acre.p25)+' &ndash; '+money(r.price_per_acre.p75))}
+      ${kv('Full range', money(r.price_per_acre.min)+' &ndash; '+money(r.price_per_acre.max))}
+      ${kv('Implied value ('+num(r.subject_acres)+' ac)', money(r.implied_value.low)+' &ndash; '+money(r.implied_value.high))}
+      ${kv('Midpoint', money(r.implied_value.mid))}
+      </div><div class="note">${esc(r.note)}</div></div>
+    <h2>Sales used</h2><table><thead><tr><th>Date</th><th>Acres</th><th>$/acre</th><th>mi</th></tr></thead><tbody>`
+    + r.sales.slice(0,60).map(s=>`<tr><td>${esc(s.sale_date||'')}<div class="sub">${money(s.sale_price)}</div></td>
+        <td>${num(s.acres)}</td><td>${money(s.price_per_acre)}</td><td>${num(s.distance_miles,1)}</td></tr>`).join('')
+    + '</tbody></table>';
+}
+
+function renderAbout(){
+  const noSvc = CFG?.counties_without_service || {};
+  document.getElementById('pane-about').innerHTML = `
+  <h2>What this is</h2>
+  <div class="card"><p class="muted">A local research tool built entirely on free public data.
+  Nothing here calls a paid API and no data leaves your machine except the queries
+  themselves, which go straight to the government servers listed below.</p></div>
+
+  <h2>Where the data comes from</h2>
+  <div class="card">
+  ${kv('Parcels &amp; owners','TN Comptroller, 86 counties')}
+  ${kv('Values &amp; land use','Comptroller OLG (IMPACT CAMA)')}
+  ${kv('Flood zones','FEMA NFHL')}
+  ${kv('Wetlands','USFWS National Wetlands Inventory')}
+  ${kv('Slope &amp; elevation','USGS 3DEP')}
+  ${kv('Soils','USDA NRCS SSURGO')}
+  ${kv('Roads','OpenStreetMap')}
+  ${kv('Sale prices','4 county GIS services')}
+  </div>
+
+  <h2>Known coverage gaps</h2>
+  <div class="card">
+  ${Object.entries(noSvc).map(([c,why])=>
+    `<div class="kv"><span>${esc(c[0]+c.slice(1).toLowerCase())}</span><span class="sub">${esc(why)}</span></div>`).join('')}
+  </div>
+
+  <h2>What it deliberately does not do</h2>
+  <div class="card"><p class="muted">No skip tracing &mdash; there is no free, lawful bulk source
+  for phone numbers, so the tool gives you owner names and mailing addresses and stops there.
+  No MLS listings. No AI vacancy detection from imagery; it uses the county's own
+  land-use classification and building counts instead, which is more reliable and costs nothing.</p></div>
+
+  <h2>Cache</h2>
+  <div class="card"><p class="muted">Every response is cached on disk so repeat lookups are instant
+  and the public servers are not hammered.</p>
+  <button class="ghost" onclick="fetch('/api/cache',{method:'DELETE'}).then(()=>alert('Cache cleared'))">Clear cache</button></div>`;
+}
+</script>
+<div class="legend">Click a parcel &middot; or use the draw tools to screen an area</div>
+</body>
+</html>

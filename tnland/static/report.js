@@ -64,7 +64,7 @@ function renderHeader(data) {
         <p><strong>County:</strong> ${parcel.county || 'N/A'}</p>
         <p><strong>Parcel ID:</strong> ${parcel.parcel_id || 'N/A'}</p>
         <p><strong>Owner:</strong> ${parcel.owner || 'N/A'}</p>
-        <p><strong>Acreage:</strong> ${parcel.acres ? parcel.acres.toFixed(2) : 'N/A'}</p>
+        <p><strong>Acreage:</strong> ${(parcel.deeded_acres || parcel.gis_acres) ? (parcel.deeded_acres || parcel.gis_acres).toFixed(2) : 'N/A'}</p>
         <p><strong>Coordinates:</strong> ${data.centroid ? data.centroid[1].toFixed(6) + ', ' + data.centroid[0].toFixed(6) : 'N/A'}</p>
       </div>
     </div>
@@ -81,17 +81,19 @@ function renderExecutiveSummary(data) {
   let homeSiteAssessment = 'Unknown';
   let farmingAssessment = 'Unknown';
 
+  const inFloodplain = flood.sfha_pct && flood.sfha_pct > 0;
+
   // Simple heuristics based on available data
-  if (terrain.slope !== undefined) {
-    if (terrain.slope > 15) septicAssessment = '⚠ High slope — septic may be challenging';
+  if (terrain.mean_slope_pct !== undefined) {
+    if (terrain.mean_slope_pct > 15) septicAssessment = '⚠ High slope — septic may be challenging';
     else septicAssessment = '✓ Slope acceptable for septic';
   }
 
-  if (flood.in_floodplain) homeSiteAssessment = '⚠ In FEMA floodplain — building risk';
-  else if (terrain.slope !== undefined && terrain.slope <= 20) homeSiteAssessment = '✓ Suitable slope for building';
+  if (inFloodplain) homeSiteAssessment = '⚠ In FEMA floodplain — building risk';
+  else if (terrain.mean_slope_pct !== undefined && terrain.mean_slope_pct <= 20) homeSiteAssessment = '✓ Suitable slope for building';
   else homeSiteAssessment = '⚠ Check slope and flood status';
 
-  if (soils.prime_farmland_overall) farmingAssessment = '✓ Prime farmland';
+  if (soils.summary?.has_prime_farmland) farmingAssessment = '✓ Prime farmland';
   else farmingAssessment = '⚠ Not designated prime farmland';
 
   return `
@@ -125,18 +127,18 @@ function renderSepticSection(data) {
       <p>Septic systems require adequate soil drainage, stable slopes, and proper distance from water sources.</p>
 
       <h3>Slope Analysis</h3>
-      <p><strong>Average Slope:</strong> ${terrain.slope !== undefined ? terrain.slope.toFixed(1) + '%' : 'N/A'}</p>
-      <p><strong>Slope Rating:</strong> ${getSlopeRating(terrain.slope)}</p>
-      ${terrain.slope !== undefined ? `<p class="note">Slopes above 15% are challenging for septic systems.</p>` : ''}
+      <p><strong>Average Slope:</strong> ${terrain.mean_slope_pct !== undefined ? terrain.mean_slope_pct.toFixed(1) + '%' : 'N/A'}</p>
+      <p><strong>Slope Rating:</strong> ${getSlopeRating(terrain.mean_slope_pct)}</p>
+      ${terrain.mean_slope_pct !== undefined ? `<p class="note">Slopes above 15% are challenging for septic systems.</p>` : ''}
 
       <h3>Soil Drainage</h3>
       <p>${getSoilDrainageText(soils)}</p>
 
       <h3>Hydric Soils (Wetlands Indicator)</h3>
-      <p>${soils.hydric_soils ? '✓ No hydric soils detected' : '⚠ Hydric soils may be present — verify with surveyor'}</p>
+      <p>${!soils.summary?.has_hydric_soil ? '✓ No hydric soils detected' : '⚠ Hydric soils may be present — verify with surveyor'}</p>
 
       <h3>Flood Risk</h3>
-      <p>${flood.in_floodplain ? '⚠ Property is in FEMA 100-year floodplain — not suitable for septic' : '✓ Not in FEMA floodplain'}</p>
+      <p>${(flood.sfha_pct && flood.sfha_pct > 0) ? '⚠ Property is in FEMA 100-year floodplain — not suitable for septic' : '✓ Not in FEMA floodplain'}</p>
 
       <h3>Proximity to Water</h3>
       <p>Septic systems must maintain proper setback from surface water. Check site plan with surveyor.</p>
@@ -157,26 +159,26 @@ function renderHomeSiteSection(data) {
       <p>Building sites require stable slopes, flood safety, road access, and utilities.</p>
 
       <h3>Slope Analysis</h3>
-      <p><strong>Average Slope:</strong> ${terrain.slope !== undefined ? terrain.slope.toFixed(1) + '%' : 'N/A'}</p>
-      <p><strong>Buildability Rating:</strong> ${getBuildabilityRating(terrain.slope)}</p>
-      ${terrain.slope !== undefined ? `<p class="note">Slopes above 20% significantly limit building feasibility.</p>` : ''}
+      <p><strong>Average Slope:</strong> ${terrain.mean_slope_pct !== undefined ? terrain.mean_slope_pct.toFixed(1) + '%' : 'N/A'}</p>
+      <p><strong>Buildability Rating:</strong> ${getBuildabilityRating(terrain.mean_slope_pct)}</p>
+      ${terrain.mean_slope_pct !== undefined ? `<p class="note">Slopes above 20% significantly limit building feasibility.</p>` : ''}
 
       <h3>Flood Risk</h3>
-      <p><strong>FEMA Floodplain Status:</strong> ${flood.in_floodplain ? '⚠ In 100-year floodplain' : '✓ Not in 100-year floodplain'}</p>
-      ${flood.fema_panel ? `<p><strong>Panel:</strong> ${flood.fema_panel}</p>` : ''}
+      <p><strong>FEMA Floodplain Status:</strong> ${(flood.sfha_pct && flood.sfha_pct > 0) ? '⚠ In 100-year floodplain' : '✓ Not in 100-year floodplain'}</p>
+      ${flood.zones && flood.zones.length ? `<p><strong>Zone:</strong> ${flood.zones.map(z => z.zone).join(', ')}</p>` : ''}
 
       <h3>Wetlands</h3>
       <p>${data.wetlands && data.wetlands.available ?
-        (data.wetlands.in_wetland ? '⚠ Property contains wetlands' : '✓ No wetlands detected')
+        (data.wetlands.pct > 0 ? '⚠ Property contains wetlands' : '✓ No wetlands detected')
         : 'Data not available'}</p>
 
       <h3>Road Access</h3>
       <p>${access.available ?
-        (`✓ Road frontage: ${access.frontage_m ? access.frontage_m.toFixed(0) + 'm' : 'Unknown'}`)
+        (`✓ Road frontage: ${access.frontage_ft !== undefined ? access.frontage_ft.toFixed(0) + ' ft' : 'Unknown'}`)
         : '⚠ Road access information unavailable'}</p>
 
       <h3>Elevation</h3>
-      <p>${data.elevation !== undefined ? `${data.elevation.toFixed(0)} feet above sea level` : 'N/A'}</p>
+      <p>${data.elevation && data.elevation.available ? `${data.elevation.elevation_ft.toFixed(0)} feet above sea level` : 'N/A'}</p>
     </div>
   `;
 }
@@ -195,19 +197,19 @@ function renderFarmingSection(data) {
       <p><strong>County Assessment:</strong> ${parcel.land_use || 'N/A'}</p>
 
       <h3>Prime Farmland Status</h3>
-      <p>${soils.prime_farmland_overall ? '✓ Designated prime farmland' : '⚠ Not designated as prime farmland'}</p>
+      <p>${soils.summary?.has_prime_farmland ? '✓ Designated prime farmland' : '⚠ Not designated as prime farmland'}</p>
 
       <h3>Soil Quality</h3>
       <p>${getSoilQualityText(soils)}</p>
 
       <h3>Acreage</h3>
-      <p>${parcel.acres ? parcel.acres.toFixed(2) + ' acres' : 'N/A'}</p>
+      <p>${(parcel.deeded_acres || parcel.gis_acres) ? (parcel.deeded_acres || parcel.gis_acres).toFixed(2) + ' acres' : 'N/A'}</p>
 
       <h3>Constraints</h3>
       <ul>
-        ${data.wetlands && data.wetlands.in_wetland ? '<li>⚠ Contains wetlands — limits cultivation</li>' : ''}
-        ${data.flood && data.flood.in_floodplain ? '<li>⚠ In floodplain — seasonal water impact</li>' : ''}
-        ${soils.hydric_soils ? '<li>⚠ Hydric soils present — poor drainage for crops</li>' : ''}
+        ${data.wetlands && data.wetlands.pct > 0 ? '<li>⚠ Contains wetlands — limits cultivation</li>' : ''}
+        ${data.flood && data.flood.sfha_pct > 0 ? '<li>⚠ In floodplain — seasonal water impact</li>' : ''}
+        ${soils.summary?.has_hydric_soil ? '<li>⚠ Hydric soils present — poor drainage for crops</li>' : ''}
       </ul>
     </div>
   `;
@@ -223,19 +225,18 @@ function renderEnvironmentalSection(data) {
       <h2>Environmental & Water Features</h2>
 
       <h3>FEMA Flood Zone</h3>
-      <p><strong>Status:</strong> ${flood.in_floodplain ? 'In 100-year floodplain' : 'Not in 100-year floodplain'}</p>
-      ${flood.fema_zone ? `<p><strong>Zone:</strong> ${flood.fema_zone}</p>` : ''}
-      ${flood.static_bfe ? `<p><strong>Base Flood Elevation:</strong> ${flood.static_bfe}</p>` : ''}
+      <p><strong>Status:</strong> ${(flood.sfha_pct && flood.sfha_pct > 0) ? 'In 100-year floodplain' : 'Not in 100-year floodplain'}</p>
+      ${flood.zones && flood.zones.length ? `<p><strong>Zone:</strong> ${flood.zones.map(z => z.zone).join(', ')}</p>` : ''}
+      ${flood.zones && flood.zones.some(z => z.base_flood_elevation) ?
+        `<p><strong>Base Flood Elevation:</strong> ${flood.zones.find(z => z.base_flood_elevation).base_flood_elevation}</p>` : ''}
 
       <h3>Wetlands (USFWS NWI)</h3>
       <p>${wetlands.available ?
-        (wetlands.in_wetland ? `✓ Wetlands present: ${wetlands.wetland_type || 'Type unknown'}` : '✓ No wetlands detected')
+        (wetlands.pct > 0 ? `✓ Wetlands present: ${wetlands.types && wetlands.types.length ? wetlands.types.map(t => t.type).join(', ') : 'Type unknown'}` : '✓ No wetlands detected')
         : '⚠ Wetlands data unavailable'}</p>
 
       <h3>Water Features</h3>
       <p>Water sources (springs, ponds, creeks) may not be captured in all datasets. Conduct site survey for verification.</p>
-      ${data.access && data.access.nearest_water_distance ?
-        `<p><strong>Distance to nearest water:</strong> ${data.access.nearest_water_distance.toFixed(0)}m</p>` : ''}
     </div>
   `;
 }
@@ -299,17 +300,18 @@ function getBuildabilityRating(slope) {
 
 function getSoilDrainageText(soils) {
   if (!soils.available) return 'Soil data unavailable.';
-  const text = soils.available ? `Soil drainage: ${soils.description || 'See SSURGO data below'}` : 'Soil data unavailable';
-  return text;
+  const classes = soils.summary?.drainage_classes;
+  return classes && classes.length
+    ? `Soil drainage classes present: ${classes.join(', ')}`
+    : 'See SSURGO map units below';
 }
 
 function getSoilQualityText(soils) {
   if (!soils.available) return 'Soil data unavailable.';
   const parts = [];
-  if (soils.prime_farmland_overall) parts.push('Prime farmland');
-  if (soils.farmland_if_irrigated) parts.push('Farmland if irrigated');
-  if (soils.farmland_of_statewide_importance) parts.push('Statewide importance');
-  return parts.length ? parts.join('; ') : 'Not classified as prime or important farmland';
+  if (soils.summary?.has_prime_farmland) parts.push('Prime farmland');
+  if (soils.summary?.has_hydric_soil) parts.push('Hydric soils present');
+  return parts.length ? parts.join('; ') : 'Not classified as prime farmland';
 }
 
 // Run on page load

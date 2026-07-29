@@ -348,6 +348,8 @@ async function searchAddress(){
   parcelLayer.addData(r.geometry);
   map.fitBounds(parcelLayer.getBounds(), {padding:[40,40], maxZoom:17});
   renderParcel(r);
+  lastParcelCoords = { lon: r.centroid[0], lat: r.centroid[1] };
+  document.getElementById('generate-report-btn').style.display = 'block';
   renderCompsPane();
 }
 

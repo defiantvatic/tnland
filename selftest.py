@@ -17,7 +17,7 @@ import numpy as np
 from shapely.geometry import Point, Polygon
 
 from tnland import analysis, comps as comps_mod, config, geo, lists
-from tnland.sources import hazards, parcels, roads, soils, terrain
+from tnland.sources import drivetimes, hazards, parcels, roads, soils, terrain
 
 PASS, FAIL = [], []
 
@@ -486,6 +486,109 @@ soils.post_form = orig_post
 check("empty soil response fails cleanly", not s2["available"] and "error" in s2)
 
 # ---------------------------------------------------------------------------
+print("\nDrive times")
+
+# Config sanity: every category must have a label and exactly one matcher
+# style, and thresholds must be positive when present.
+for _k, _c in config.DRIVETIME_CATEGORIES.items():
+    styles = sum(1 for s in ("fixed", "brands", "overpass") if s in _c)
+    check(f"category '{_k}' well formed",
+          bool(_c.get("label")) and styles == 1
+          and (_c.get("threshold_min") is None or _c["threshold_min"] > 0)
+          and ("fixed" in _c or _c.get("search_km", 0) > 0))
+for _f in config.DRIVETIME_CATEGORIES["large_airport"]["fixed"]:
+    check(f"fixed airport '{_f['name'][:20]}' has coordinates",
+          -91 < _f["lon"] < -81 and 34 < _f["lat"] < 37)
+
+# The core promise: nearest by ROAD wins, not nearest by air. Three
+# candidates; the closest by air is given the slowest matrix time.
+_cands = [
+    {"name": "Closest by air, slow road", "lat": 35.90, "lon": -86.59},
+    {"name": "Second by air, fast road", "lat": 35.95, "lon": -86.59},
+    {"name": "Far by air", "lat": 36.20, "lon": -86.59},
+]
+_orig_matrix = drivetimes._matrix
+drivetimes._matrix = lambda lat, lon, targets: {"sources_to_targets": [[
+    {"to_index": 0, "time": 1500, "distance": 6.0},
+    {"to_index": 1, "time": 600, "distance": 8.0},
+    {"to_index": 2, "time": 2400, "distance": 25.0},
+]]}
+_best = drivetimes._nearest_by_road(35.86, -86.59, _cands)
+drivetimes._matrix = _orig_matrix
+check("nearest by road beats nearest by air",
+      _best["name"] == "Second by air, fast road", str(_best))
+check("matrix seconds become minutes", _best["minutes"] == 10.0)
+
+# Unreachable targets (null time) must be skipped, and all-null must return
+# None rather than a fabricated answer.
+drivetimes._matrix = lambda lat, lon, targets: {"sources_to_targets": [[
+    {"to_index": 0, "time": None, "distance": None},
+    {"to_index": 1, "time": 900, "distance": 9.0},
+]]}
+_best = drivetimes._nearest_by_road(35.86, -86.59, _cands[:2])
+check("unreachable candidate skipped", _best["name"] == _cands[1]["name"])
+drivetimes._matrix = lambda lat, lon, targets: {"sources_to_targets": [[
+    {"to_index": 0, "time": None}]]}
+check("all-unreachable returns None, not an invented time",
+      drivetimes._nearest_by_road(35.86, -86.59, _cands[:1]) is None)
+drivetimes._matrix = _orig_matrix
+
+# Overpass fixture parsing: ways carry "center", nodes carry lat/lon,
+# unnamed and duplicate elements are dropped.
+_pois = drivetimes._extract_pois({"elements": [
+    {"type": "node", "id": 1, "lat": 35.9, "lon": -86.5,
+     "tags": {"name": "Cookeville Regional"}},
+    {"type": "way", "id": 2, "center": {"lat": 35.8, "lon": -86.4},
+     "tags": {"name": "Ascension Saint Thomas"}},
+    {"type": "node", "id": 1, "lat": 35.9, "lon": -86.5,
+     "tags": {"name": "Cookeville Regional"}},
+    {"type": "node", "id": 3, "lat": 35.7, "lon": -86.3, "tags": {}},
+]})
+check("POIs parsed from nodes and way centers", len(_pois) == 2, str(_pois))
+
+# A mirror success reorders the crawl so the next category starts at the
+# mirror that just answered instead of re-timing-out on a dead one.
+drivetimes._mirror_order = None
+check("mirror order starts as configured",
+      drivetimes._mirrors() == list(config.OVERPASS))
+drivetimes._remember_winner(config.OVERPASS[-1])
+check("winning mirror moves to the front",
+      drivetimes._mirrors()[0] == config.OVERPASS[-1]
+      and sorted(drivetimes._mirrors()) == sorted(config.OVERPASS))
+drivetimes._mirror_order = None
+
+# Grid snapping shares one cached query across a whole cell.
+check("nearby points snap to one POI cache key",
+      drivetimes._poi_query(config.DRIVETIME_CATEGORIES["hospital"], 35.8601, -86.5899)
+      == drivetimes._poi_query(config.DRIVETIME_CATEGORIES["hospital"], 35.8607, -86.5893))
+
+# Full drive_times() with both services mocked: thresholds classify, the
+# info-only category never sets "over", and a per-category failure does not
+# sink the panel.
+_orig_pois = drivetimes._overpass_pois
+def _fake_pois(cat, lat, lon):
+    if "brands" in cat:
+        raise drivetimes.SourceError("all mirrors down")
+    return [{"name": "Fixture Place", "lat": lat + 0.05, "lon": lon}]
+drivetimes._overpass_pois = _fake_pois
+drivetimes._matrix = lambda lat, lon, targets: {"sources_to_targets": [[
+    {"to_index": 0, "time": 1800, "distance": 12.0}]]}
+_dt = drivetimes.drive_times(-86.59, 35.86)
+drivetimes._overpass_pois = _orig_pois
+drivetimes._matrix = _orig_matrix
+
+_by_key = {r["key"]: r for r in _dt["results"]}
+check("panel available despite one failed category", _dt["available"] is True)
+check("failed category names the service error",
+      "mirrors down" in _by_key["big_box"].get("error", ""))
+check("30 min exceeds a 20 min threshold",
+      _by_key["hospital"]["over"] is True)
+check("30 min meets a 120 min threshold",
+      _by_key["large_airport"]["over"] is False)
+check("info-only category never flags over",
+      _by_key["marina"]["found"] is True and _by_key["marina"]["over"] is None)
+
+# ---------------------------------------------------------------------------
 print("\nFlags")
 
 report = {
@@ -538,6 +641,63 @@ good = {
 gflags = analysis._flags(good)
 check("clean parcel produces no bad flags",
       not any(f["level"] == "bad" for f in gflags))
+
+# Drive-time flags: a miss warns (or goes bad at double the target), an
+# empty info-only category stays silent, and the green summary only appears
+# when every thresholded category is met.
+_dt_flags = analysis._flags({"parcel": {}, "drivetimes": {
+    "available": True, "results": [
+        {"key": "hospital", "label": "Hospital", "threshold_min": 20,
+         "found": True, "over": True, "minutes": 27.0, "name": "Somewhere General"},
+        {"key": "big_box", "label": "Big box store", "threshold_min": 45,
+         "found": True, "over": True, "minutes": 95.0, "name": "Walmart"},
+        {"key": "grocery", "label": "Grocery store", "threshold_min": 20,
+         "found": True, "over": False, "minutes": 9.0, "name": "Kroger"},
+        {"key": "marina", "label": "Marina", "threshold_min": None,
+         "found": False, "note": "nothing matching within 60 km"},
+    ]}})
+check("over-target drive time warns",
+      any(f["level"] == "warn" and "hospital" in f["text"].lower()
+          for f in _dt_flags), str(_dt_flags))
+check("double-the-target goes bad",
+      any(f["level"] == "bad" and "big box" in f["text"].lower()
+          for f in _dt_flags))
+check("empty info-only category stays silent",
+      not any("marina" in f["text"].lower() for f in _dt_flags))
+check("no green summary while a target is missed",
+      not any("targets met" in f["text"] for f in _dt_flags))
+
+_dt_ok = analysis._flags({"parcel": {}, "drivetimes": {
+    "available": True, "results": [
+        {"key": "hospital", "label": "Hospital", "threshold_min": 20,
+         "found": True, "over": False, "minutes": 10.0, "name": "A"},
+        {"key": "grocery", "label": "Grocery store", "threshold_min": 20,
+         "found": True, "over": False, "minutes": 5.0, "name": "B"},
+    ]}})
+check("all targets met earns the green summary",
+      any(f["level"] == "ok" and "targets met" in f["text"] for f in _dt_ok))
+
+_dt_err = analysis._flags({"parcel": {}, "drivetimes": {
+    "available": True, "results": [
+        {"key": "hospital", "label": "Hospital", "threshold_min": 20,
+         "found": False, "error": "Valhalla routing unavailable"},
+    ]}})
+check("a service error is not reported as a finding",
+      not any("hospital" in f["text"].lower() for f in _dt_err), str(_dt_err))
+
+# Regression: seen live during an Overpass outage -- two categories answered
+# and met their targets while two errored out, and the report claimed "all
+# drive-time targets met". An errored category is unknown, not met.
+_dt_partial = analysis._flags({"parcel": {}, "drivetimes": {
+    "available": True, "results": [
+        {"key": "hospital", "label": "Hospital", "threshold_min": 20,
+         "found": True, "over": False, "minutes": 10.0, "name": "A"},
+        {"key": "pharmacy", "label": "Pharmacy", "threshold_min": 20,
+         "found": False, "error": "all mirrors down"},
+    ]}})
+check("errored category suppresses the green summary",
+      not any("targets met" in f["text"] for f in _dt_partial),
+      str(_dt_partial))
 
 # ---------------------------------------------------------------------------
 print("\nComps")

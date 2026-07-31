@@ -10,7 +10,8 @@ analysis, and property screening through a web-based map interface. It runs
 locally with no external uploads, API keys, or subscriptions.
 
 Sources: TN Comptroller (parcels, land use), five county GIS services, FEMA,
-USFWS, USGS 3DEP, USDA NRCS, OpenStreetMap, and Census TIGER.
+USFWS, USGS 3DEP, USDA NRCS, OpenStreetMap, Census TIGER, and FOSSGIS
+Valhalla (drive-time routing).
 
 ## Quick start
 
@@ -22,7 +23,7 @@ pip install -r requirements.txt
 
 python -m tnland doctor            # verify every live data source
 python -m tnland                   # run the app, opens 127.0.0.1:8823
-python selftest.py                 # 196 offline checks
+python selftest.py                 # 227 offline checks
 
 # CLI
 python -m tnland address "2926 Bryant Ridge Rd, Baxter, TN 38544"
@@ -127,7 +128,11 @@ adapters in `config.COUNTY_SERVICES`; four have no public service at all.
 (3DEP elevation, slope computed locally from a downloaded DEM), `roads.py`
 (OpenStreetMap via Overpass, falling back to Census TIGER/Line), `soils.py`
 (NRCS SSURGO), `geocode.py` (Census geocoder, falling back to Nominatim and
-then to the assessor's own ADDRESS field).
+then to the assessor's own ADDRESS field), `drivetimes.py` (nearest
+hospital / grocery / pharmacy / big-box / airport by real road-network
+drive time -- Overpass finds candidates, a Valhalla time matrix picks the
+truly nearest by road, thresholds live in `config.DRIVETIME_CATEGORIES`;
+informational categories use `threshold_min: None` and never flag).
 
 Address lookup geocodes to a point and asks which parcel contains it, rather
 than matching the parcel layer's ADDRESS field directly. That field is often
@@ -285,7 +290,7 @@ tnland/
   lists.py        area screening, filters, CSV export
   server.py       FastAPI routes
   doctor.py       live health check
-  sources/        parcels, hazards, terrain, roads, soils
+  sources/        parcels, hazards, terrain, roads, soils, drivetimes
   static/index.html   the entire frontend
 ```
 

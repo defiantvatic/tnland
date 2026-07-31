@@ -41,13 +41,13 @@ def get_config() -> dict[str, Any]:
 
 
 @app.get("/api/parcel")
-def parcel(lon: float, lat: float, layers: str = "flood,wetlands,slope,roads,soils"):
+def parcel(lon: float, lat: float, layers: str = "flood,wetlands,slope,roads,soils,drivetimes"):
     include = {x.strip() for x in layers.split(",") if x.strip()}
     return analysis.parcel_report(lon, lat, include=include)
 
 
 @app.get("/api/report")
-def report(lon: float, lat: float, layers: str = "flood,wetlands,slope,roads,soils"):
+def report(lon: float, lat: float, layers: str = "flood,wetlands,slope,roads,soils,drivetimes"):
     """Generate data for a detailed printable parcel report."""
     include = {x.strip() for x in layers.split(",") if x.strip()}
     return analysis.parcel_report(lon, lat, include=include)
@@ -60,7 +60,7 @@ def report_page() -> FileResponse:
 
 
 @app.get("/api/search/address")
-def search_address(q: str, layers: str = "flood,wetlands,slope,roads,soils"):
+def search_address(q: str, layers: str = "flood,wetlands,slope,roads,soils,drivetimes"):
     if len(q.strip()) < 5:
         raise HTTPException(400, "Address search needs at least 5 characters")
     include = {x.strip() for x in layers.split(",") if x.strip()}

@@ -292,6 +292,22 @@ function renderParcel(r){
     return s;
   });
 
+  h += section('Drive times', r.drivetimes, d=>{
+    let out = '';
+    for (const c of (d.results||[])){
+      if (c.found){
+        const target = c.threshold_min ? `target ${c.threshold_min} min` : 'info only';
+        const mark = c.over===true ? ' <span style="color:#e2694f">&#9888;</span>' : '';
+        out += kv(esc(c.label)+' <span class="sub">'+target+'</span>',
+                  `${c.minutes} min <span class="sub">(${c.miles} mi &middot; ${esc(c.name)})</span>${mark}`);
+      } else {
+        out += kv(esc(c.label),
+                  `<span class="sub">${esc(c.error ? 'unavailable' : (c.note||'none found'))}</span>`);
+      }
+    }
+    return out;
+  });
+
   h += section('Soils', r.soils, s=>{
     const sum = s.summary||{};
     let out = kv('Map units', sum.map_unit_count)

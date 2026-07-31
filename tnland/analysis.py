@@ -6,12 +6,13 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from . import config, geo
-from .sources import geocode, hazards, parcels, roads, soils, terrain
+from .sources import drivetimes, geocode, hazards, parcels, roads, soils, terrain
 
 
 def parcel_report(lon: float, lat: float,
                   include: set[str] | None = None) -> dict[str, Any]:
-    include = include or {"flood", "wetlands", "slope", "roads", "soils"}
+    include = include or {"flood", "wetlands", "slope", "roads", "soils",
+                          "drivetimes"}
     record = parcels.at_point(lon, lat)
     if record is None:
         return {
@@ -32,7 +33,7 @@ def parcel_report(lon: float, lat: float,
     # Each source is an independent network call; run them together so a
     # report takes as long as the slowest one, not the sum of all of them.
     jobs = {}
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    with ThreadPoolExecutor(max_workers=7) as pool:
         if "flood" in include:
             jobs["flood"] = pool.submit(hazards.flood, geom)
         if "wetlands" in include:
@@ -43,6 +44,10 @@ def parcel_report(lon: float, lat: float,
             jobs["access"] = pool.submit(roads.access, geom)
         if "soils" in include:
             jobs["soils"] = pool.submit(soils.soils, geom)
+        if "drivetimes" in include:
+            jobs["drivetimes"] = pool.submit(
+                drivetimes.drive_times, geom.centroid.x, geom.centroid.y
+            )
         jobs["elevation"] = pool.submit(
             terrain.point_elevation, geom.centroid.x, geom.centroid.y
         )
@@ -262,6 +267,37 @@ def _flags(report: dict[str, Any]) -> list[dict[str, str]]:
     if soil.get("available") and soil.get("summary", {}).get("has_hydric_soil"):
         flags.append({"level": "warn", "text":
                       "Hydric soils present -- a wetland indicator."})
+
+    dt = report.get("drivetimes", {})
+    if dt.get("available"):
+        # Only thresholded categories can pass or fail; informational ones
+        # (threshold_min None) appear in the panel but never flag.
+        required = [r for r in dt.get("results", [])
+                    if r.get("threshold_min")]
+        over = [r for r in required if r.get("found") and r.get("over")]
+        # A required category with no match and no service error means the
+        # search genuinely came up empty -- worth a warning. A service error
+        # already shows in the panel and should not masquerade as a finding.
+        empty = [r for r in required
+                 if not r.get("found") and not r.get("error")]
+        for r in over:
+            level = "bad" if r["minutes"] > 2 * r["threshold_min"] else "warn"
+            flags.append({"level": level, "text":
+                          f"Nearest {r['label'].lower()} is "
+                          f"{r['minutes']:.0f} min away ({r['name']}) -- "
+                          f"target is {r['threshold_min']} min."})
+        for r in empty:
+            flags.append({"level": "warn", "text":
+                          f"No {r['label'].lower()} found within its "
+                          "search radius."})
+        met = [r for r in required if r.get("found") and r.get("over") is False]
+        # "All targets met" must mean ALL: a category that errored out is
+        # unknown, not met, and must suppress the green summary.
+        if required and len(met) == len(required):
+            sample = ", ".join(f"{r['label'].lower()} {r['minutes']:.0f} min"
+                               for r in met[:3])
+            flags.append({"level": "ok", "text":
+                          f"All drive-time targets met ({sample})."})
 
     order = {"bad": 0, "warn": 1, "info": 2, "ok": 3}
     flags.sort(key=lambda f: order.get(f["level"], 4))

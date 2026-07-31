@@ -22,7 +22,7 @@ from shapely.geometry import Point
 
 from . import config, geo
 from .http import SourceError, arcgis_query, probe
-from .sources import hazards, parcels, roads, soils, terrain
+from .sources import drivetimes, hazards, parcels, roads, soils, terrain
 
 GREEN = "\033[32m"
 RED = "\033[31m"
@@ -193,6 +193,20 @@ def run(verbose: bool = False, lon: float | None = None,
             _line("pass", label, f"{secs:.1f}s  {describe(result)}")
 
     c = geom.centroid
+    dt, secs, err = _timed(lambda: drivetimes.drive_times(c.x, c.y))
+    if err or not (dt or {}).get("available"):
+        _line("fail", "Drive times", err or (dt or {}).get("error", ""))
+    else:
+        found = [r for r in dt["results"] if r.get("found")]
+        broken = [r for r in dt["results"] if r.get("error")]
+        sample = (f"{found[0]['label'].lower()} {found[0]['minutes']:.0f} min "
+                  f"({found[0]['name']})" if found else "no matches")
+        status = "warn" if broken else "pass"
+        detail = f"{secs:.1f}s  {len(found)}/{len(dt['results'])} categories, {sample}"
+        if broken:
+            detail += "  [" + broken[0].get("error", "")[:60] + "]"
+        _line(status, "Drive times", detail)
+
     elev, secs, err = _timed(lambda: terrain.point_elevation(c.x, c.y))
     if err or not (elev or {}).get("available"):
         _line("fail", "Point elevation", err or (elev or {}).get("error", ""))

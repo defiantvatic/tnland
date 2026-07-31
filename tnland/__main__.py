@@ -153,6 +153,19 @@ def _print_report(report: dict) -> None:
         mark = {"bad": "!!", "warn": " !", "ok": " +", "info": " ."}.get(
             flag["level"], "  ")
         print(f" {mark} {flag['text']}")
+    dt = report.get("drivetimes", {})
+    if dt.get("available"):
+        print("\nDrive times (free-flow, from parcel centroid):")
+        for r in dt.get("results", []):
+            target = (f"target {r['threshold_min']} min"
+                      if r.get("threshold_min") else "info only")
+            if r.get("found"):
+                mark = "!!" if r.get("over") else "  "
+                print(f" {mark} {r['label']:<20} {r['minutes']:>6.0f} min  "
+                      f"{r['miles']:>5.1f} mi  {r['name']}  [{target}]")
+            else:
+                print(f"    {r['label']:<20}    -- "
+                      f" {r.get('error') or r.get('note', '')}")
     if p.get("tpad_url"):
         print(f"\nTPAD: {p['tpad_url']}")
     print(f"\n{report.get('disclaimer', '')}\n")

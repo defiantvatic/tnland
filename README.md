@@ -52,6 +52,7 @@ Your browser opens at `http://127.0.0.1:8823`.
 | Slope distribution, % buildable under 15%, relief, elevation | USGS 3DEP |
 | Road frontage in feet, landlocked screening | OpenStreetMap |
 | Soil map units, drainage class, prime farmland, hydric soils | USDA NRCS SSURGO |
+| Drive time to the nearest hospital, grocery, pharmacy, dentist, big-box store and large airport, checked against your targets | OpenStreetMap + FOSSGIS Valhalla |
 
 Plus a plain-language "at a glance" summary that sorts the problems to the top.
 
@@ -109,6 +110,9 @@ whether a wetland is jurisdictional.
 **Slope percentages are of the parcel's bounding box**, which slightly
 overstates the area for irregularly shaped parcels.
 
+**Drive times are free-flow** -- no traffic model -- and computed from the
+parcel centroid. Targets are edited in `config.DRIVETIME_CATEGORIES`.
+
 ---
 
 ## Commands
@@ -121,7 +125,7 @@ python -m tnland parcel -86.586 35.845     # one parcel report in the terminal
 python -m tnland parcel -86.586 35.845 --json
 python -m tnland cache stats        # how much is cached
 python -m tnland cache clear        # wipe the cache
-python selftest.py                  # offline test suite, 147 checks
+python selftest.py                  # offline test suite, 227 checks
 ```
 
 ---

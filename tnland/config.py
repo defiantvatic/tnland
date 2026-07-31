@@ -323,6 +323,90 @@ COMPS_COUNTIES = ["DAVIDSON", "HAMILTON", "MONTGOMERY", "RUTHERFORD"]
 TPAD_URL = "https://assessment.cot.tn.gov/TPAD/Parcel/GIS?gislink={gislink}"
 
 # --------------------------------------------------------------------------
+# Drive times (Valhalla routing + Overpass places)
+# --------------------------------------------------------------------------
+# CONFIRMED live during integration. FOSSGIS hosts a free Valhalla instance
+# with no API key; its /sources_to_targets matrix endpoint answers one
+# origin -> N destinations in a single call. Same fair-use expectations as
+# Overpass: identified client, cached results, personal-scale volume.
+VALHALLA = [
+    "https://valhalla1.openstreetmap.de",
+]
+
+# Each category defines what counts as a match and the drive-time target in
+# minutes. threshold_min of None means informational -- reported and shown,
+# never flagged. Three matcher styles, first present wins:
+#   "fixed"    hand-picked destinations (used where "large airport" is a
+#              judgement call no tag query captures)
+#   "brands"   regex against OSM brand/name tags (big-box isn't an OSM tag)
+#   "overpass" an Overpass tag filter, same vocabulary as the roads source
+DRIVETIME_CATEGORIES = {
+    "hospital": {
+        "label": "Hospital",
+        "threshold_min": 20,
+        "search_km": 45,
+        "overpass": 'nwr["amenity"="hospital"]',
+    },
+    "grocery": {
+        "label": "Grocery store",
+        "threshold_min": 20,
+        "search_km": 45,
+        "overpass": 'nwr["shop"="supermarket"]',
+    },
+    "pharmacy": {
+        "label": "Pharmacy",
+        "threshold_min": 20,
+        "search_km": 45,
+        "overpass": 'nwr["amenity"="pharmacy"]',
+    },
+    "dentist": {
+        "label": "Dentist",
+        "threshold_min": 20,
+        "search_km": 45,
+        "overpass": 'nwr["amenity"="dentist"]',
+    },
+    "big_box": {
+        "label": "Big box store",
+        "threshold_min": 45,
+        "search_km": 90,
+        "brands": "Walmart|Target|Home Depot|Lowe|Costco|Sam's Club"
+                  "|Tractor Supply",
+    },
+    "marina": {
+        "label": "Marina / boat slip",
+        "threshold_min": None,
+        "search_km": 60,
+        "overpass": 'nwr["leisure"="marina"]["mooring"="yes"]',
+    },
+    "large_airport": {
+        "label": "Large airport",
+        "threshold_min": 120,
+        "fixed": [
+            {"name": "Nashville International (BNA)",
+             "lat": 36.1263, "lon": -86.6774},
+            {"name": "Knoxville McGhee Tyson (TYS)",
+             "lat": 35.8110, "lon": -83.9940},
+            {"name": "Chattanooga Metropolitan (CHA)",
+             "lat": 35.0353, "lon": -85.2038},
+            {"name": "Huntsville International (HSV)",
+             "lat": 34.6404, "lon": -86.7751},
+        ],
+    },
+}
+
+# How many nearest-by-air candidates go into the one matrix call per
+# category. The nearest place by road is often not the nearest by air --
+# a river gorge turns five air-miles into a twenty-five minute drive -- so
+# never matrix fewer than a handful.
+DRIVETIME_MAX_CANDIDATES = 8
+
+# Places are cached against a grid-snapped centre so every parcel in the
+# same ~2 km cell shares one Overpass query. The search radius gets a
+# matching margin so snapping can never exclude a legitimate result.
+DRIVETIME_GRID_DEG = 0.02
+DRIVETIME_POI_TTL_DAYS = 30
+
+# --------------------------------------------------------------------------
 # Basemaps (no API key required)
 # --------------------------------------------------------------------------
 BASEMAPS = {

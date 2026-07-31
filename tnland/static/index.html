@@ -29,8 +29,10 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);
 h2:first-child{margin-top:0}
 .card{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:11px 13px;margin-bottom:9px}
 .kv{display:flex;justify-content:space-between;gap:12px;padding:3px 0;font-size:12.5px}
-.kv span:first-child{color:var(--dim);flex-shrink:0}
-.kv span:last-child{text-align:right;word-break:break-word}
+/* Labels wrap when long (soil unit names); values keep at least 45% width
+   so they never collapse into per-character wrapping. */
+.kv > span:first-child{color:var(--dim);min-width:0;overflow-wrap:break-word}
+.kv > span:last-child{text-align:right;word-break:break-word;flex-shrink:0;max-width:45%}
 .big{font-size:22px;font-weight:600;letter-spacing:-.3px}
 .sub{font-size:11.5px;color:var(--dim)}
 .flag{display:flex;gap:9px;padding:7px 0;font-size:12.5px;border-bottom:1px solid var(--line)}

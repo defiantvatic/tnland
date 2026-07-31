@@ -47,6 +47,7 @@ function renderFullReport(data) {
     ${renderExecutiveSummary(data)}
     ${renderSepticSection(data)}
     ${renderHomeSiteSection(data)}
+    ${renderDriveTimesSection(data)}
     ${renderFarmingSection(data)}
     ${renderEnvironmentalSection(data)}
     ${renderSourcesDisclaimer(data)}
@@ -96,6 +97,22 @@ function renderExecutiveSummary(data) {
   if (soils.summary?.has_prime_farmland) farmingAssessment = '✓ Prime farmland';
   else farmingAssessment = '⚠ Not designated prime farmland';
 
+  let driveAssessment = 'Unknown';
+  const dt = data.drivetimes || {};
+  if (dt.available) {
+    const required = (dt.results || []).filter(r => r.threshold_min);
+    const over = required.filter(r => r.found && r.over);
+    const unanswered = required.filter(r => !r.found);
+    if (over.length) {
+      driveAssessment = '⚠ Over target: ' + over.map(r =>
+        `${r.label.toLowerCase()} ${Math.round(r.minutes)} min (target ${r.threshold_min})`).join('; ');
+    } else if (unanswered.length) {
+      driveAssessment = '⚠ Targets met so far, but some categories were unavailable — see Drive Times below';
+    } else if (required.length) {
+      driveAssessment = '✓ All drive-time targets met';
+    }
+  }
+
   return `
     <div class="section summary-section">
       <h2>Executive Summary</h2>
@@ -108,6 +125,9 @@ function renderExecutiveSummary(data) {
         </div>
         <div class="summary-item">
           <strong>Hobby Farming:</strong> ${farmingAssessment}
+        </div>
+        <div class="summary-item">
+          <strong>Daily Needs:</strong> ${driveAssessment}
         </div>
       </div>
     </div>
@@ -179,6 +199,39 @@ function renderHomeSiteSection(data) {
 
       <h3>Elevation</h3>
       <p>${data.elevation && data.elevation.available ? `${data.elevation.elevation_ft.toFixed(0)} feet above sea level` : 'N/A'}</p>
+    </div>
+  `;
+}
+
+// Helper: Drive times section
+function renderDriveTimesSection(data) {
+  const dt = data.drivetimes || {};
+  if (!dt.available) {
+    return `
+      <div class="section drivetimes-section">
+        <h2>Drive Times & Daily Needs</h2>
+        <p>⚠ Drive-time data unavailable${dt.error ? ' — ' + dt.error : ''}.</p>
+      </div>
+    `;
+  }
+  const rows = (dt.results || []).map(r => {
+    const target = r.threshold_min ? `target ${r.threshold_min} min` : 'informational';
+    if (r.found) {
+      const mark = r.over === true ? '⚠' : (r.over === false ? '✓' : '•');
+      return `<li>${mark} <strong>${r.label}:</strong> ${r.minutes} min ` +
+             `(${r.miles} mi — ${r.name}) <em>[${target}]</em></li>`;
+    }
+    const why = r.error ? 'temporarily unavailable' : (r.note || 'none found');
+    return `<li>• <strong>${r.label}:</strong> ${why} <em>[${target}]</em></li>`;
+  }).join('');
+  return `
+    <div class="section drivetimes-section">
+      <h2>Drive Times & Daily Needs</h2>
+      <p>Drive time from the parcel centroid to the nearest destination in each
+      category, computed on the real road network — not straight-line distance.</p>
+      <ul>${rows}</ul>
+      <p class="note">Free-flow estimates (no traffic model), OpenStreetMap road
+      network via Valhalla. Verify the named place is what you expect.</p>
     </div>
   `;
 }
@@ -256,6 +309,7 @@ function renderSourcesDisclaimer(data) {
         <li>USGS 3DEP (elevation, slope)</li>
         <li>NRCS SSURGO (soil types, drainage)</li>
         <li>OpenStreetMap & TIGER (road access)</li>
+        <li>OpenStreetMap & FOSSGIS Valhalla (drive times)</li>
       </ul>
 
       <h3>Important Disclaimers</h3>
@@ -275,6 +329,7 @@ function renderSourcesDisclaimer(data) {
         <li>Wetlands are based on aerial imagery; on-site conditions may differ</li>
         <li>Flood zones reflect FEMA mapping; local flooding may occur outside mapped zones</li>
         <li>Road access reflects centerline proximity; no guarantee of legal right-of-way</li>
+        <li>Drive times are free-flow estimates with no traffic model, from the parcel centroid</li>
       </ul>
     </div>
   `;

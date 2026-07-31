@@ -344,39 +344,39 @@ DRIVETIME_CATEGORIES = {
     "hospital": {
         "label": "Hospital",
         "threshold_min": 20,
-        "search_km": 45,
+        "search_mi": 30,
         "overpass": 'nwr["amenity"="hospital"]',
     },
     "grocery": {
         "label": "Grocery store",
         "threshold_min": 20,
-        "search_km": 45,
+        "search_mi": 30,
         "overpass": 'nwr["shop"="supermarket"]',
     },
     "pharmacy": {
         "label": "Pharmacy",
         "threshold_min": 20,
-        "search_km": 45,
+        "search_mi": 30,
         "overpass": 'nwr["amenity"="pharmacy"]',
     },
     "dentist": {
         "label": "Dentist",
         "threshold_min": 20,
-        "search_km": 45,
+        "search_mi": 30,
         "overpass": 'nwr["amenity"="dentist"]',
     },
     "big_box": {
         "label": "Big box store",
         "threshold_min": 45,
-        "search_km": 90,
+        "search_mi": 55,
         "brands": "Walmart|Target|Home Depot|Lowe|Costco|Sam's Club"
                   "|Tractor Supply",
     },
     "marina": {
         "label": "Marina / boat slip",
         "threshold_min": None,
-        "search_km": 60,
-        "overpass": 'nwr["leisure"="marina"]["mooring"="yes"]',
+        "search_mi": 40,
+        "overpass": 'nwr["leisure"="marina"]',
     },
     "large_airport": {
         "label": "Large airport",

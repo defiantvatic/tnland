@@ -495,7 +495,7 @@ for _k, _c in config.DRIVETIME_CATEGORIES.items():
     check(f"category '{_k}' well formed",
           bool(_c.get("label")) and styles == 1
           and (_c.get("threshold_min") is None or _c["threshold_min"] > 0)
-          and ("fixed" in _c or _c.get("search_km", 0) > 0))
+          and ("fixed" in _c or _c.get("search_mi", 0) > 0))
 for _f in config.DRIVETIME_CATEGORIES["large_airport"]["fixed"]:
     check(f"fixed airport '{_f['name'][:20]}' has coordinates",
           -91 < _f["lon"] < -81 and 34 < _f["lat"] < 37)

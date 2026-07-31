@@ -52,7 +52,7 @@ def _poi_query(cat: dict[str, Any], lat: float, lon: float) -> str:
     # Snap the centre for cache sharing; widen the radius so the snap can
     # never exclude a place that a parcel-exact query would have found.
     slat, slon = _snap(lat), _snap(lon)
-    radius_m = int(cat["search_km"] * 1000) + 3000
+    radius_m = int(cat["search_mi"] * 1609.34) + 3000
     if "brands" in cat:
         rx = cat["brands"]
         body = (f'nwr["shop"]["brand"~"{rx}",i](around:{radius_m},{slat},{slon});'
@@ -210,7 +210,7 @@ def drive_times(lon: float, lat: float) -> dict[str, Any]:
             if not candidates:
                 entry.update({
                     "found": False,
-                    "note": f"nothing matching within {cat['search_km']} km",
+                    "note": f"nothing matching within {cat['search_mi']} mi",
                 })
             else:
                 nearest = _nearest_by_road(lat, lon, candidates)

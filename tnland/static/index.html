@@ -190,14 +190,39 @@ const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'
 
 function kv(k,v){ return `<div class="kv"><span>${k}</span><span>${v}</span></div>`; }
 
+function newJob(){ return 'j' + Math.random().toString(36).slice(2); }
+
+// Poll /api/progress while a report is in flight and narrate each source's
+// status in place of the spinner. Returns a stop function.
+function startProgress(job, out){
+  out.innerHTML = '<div class="spin" id="progress-live">Contacting services&hellip;</div>';
+  const marks = {done:'&#10003;', failed:'&#10007;', running:'&#8987;'};
+  const t = setInterval(async ()=>{
+    try {
+      const p = await (await fetch('/api/progress?job='+job)).json();
+      const el = document.getElementById('progress-live');
+      if (!el || !p.sources || !p.sources.length) return;
+      el.innerHTML = '<div style="text-align:left;display:inline-block">'
+        + p.sources.map(s =>
+          `<div style="padding:2px 0">${marks[s.status]||'&#8987;'} ${esc(s.label)}`
+          + (s.detail ? ` <span class="sub">${esc(s.detail)}</span>` : '')
+          + '</div>').join('')
+        + '</div>';
+    } catch(e){}
+  }, 400);
+  return ()=>clearInterval(t);
+}
+
 async function loadParcel(lon, lat){
   const out = document.getElementById('parcel-out');
   showPane('parcel');
-  out.innerHTML = '<div class="spin">Pulling parcel, flood, wetlands, slope, roads and soils&hellip;</div>';
   parcelLayer.clearLayers(); compsLayer.clearLayers();
+  const job = newJob();
+  const stopProgress = startProgress(job, out);
   let r;
-  try { r = await (await fetch(`/api/parcel?lon=${lon}&lat=${lat}`)).json(); }
+  try { r = await (await fetch(`/api/parcel?lon=${lon}&lat=${lat}&job=${job}`)).json(); }
   catch(e){ out.innerHTML = `<p class="err">Request failed: ${esc(e.message)}</p>`; return; }
+  finally { stopProgress(); }
   if (!r.found){ out.innerHTML = `<p class="muted">${esc(r.message)}</p>`; return; }
   selected = r;
   lastParcelCoords = { lon, lat };
@@ -341,11 +366,13 @@ async function searchAddress(){
   if (q.length < 5) return;
   const out = document.getElementById('parcel-out');
   showPane('parcel');
-  out.innerHTML = '<div class="spin">Geocoding, then pulling the full report&hellip;</div>';
   parcelLayer.clearLayers(); compsLayer.clearLayers(); hitLayer.clearLayers();
+  const job = newJob();
+  const stopProgress = startProgress(job, out);
   let r;
-  try { r = await (await fetch('/api/search/address?q='+encodeURIComponent(q))).json(); }
+  try { r = await (await fetch('/api/search/address?q='+encodeURIComponent(q)+'&job='+job)).json(); }
   catch(e){ out.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  finally { stopProgress(); }
 
   if (r.kind === 'road' && r.found){ renderRoad(r); return; }
 

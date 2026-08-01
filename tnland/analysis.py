@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from . import config, geo
+from . import config, geo, progress
 from .sources import drivetimes, geocode, hazards, parcels, roads, soils, terrain
 
 
 def parcel_report(lon: float, lat: float,
-                  include: set[str] | None = None) -> dict[str, Any]:
+                  include: set[str] | None = None,
+                  job: str | None = None) -> dict[str, Any]:
     include = include or {"flood", "wetlands", "slope", "roads", "soils",
                           "drivetimes"}
+    progress.update(job, "parcel", "running")
     record = parcels.at_point(lon, lat)
     if record is None:
+        progress.update(job, "parcel", "failed", "no parcel at that point")
         return {
             "found": False,
             "message": (
@@ -29,37 +33,52 @@ def parcel_report(lon: float, lat: float,
     if geom is None:
         report["message"] = "Parcel found but returned no geometry."
         return report
+    progress.update(job, "parcel", "done",
+                    f"{record.get('county', '')} {record.get('parcel_id', '')}".strip())
 
     # Each source is an independent network call; run them together so a
     # report takes as long as the slowest one, not the sum of all of them.
-    jobs = {}
+    # as_completed (not dict order) so progress reflects reality: fast
+    # sources report done while slow ones still show running.
+    futures: dict[Any, str] = {}
+    started: dict[str, float] = {}
     with ThreadPoolExecutor(max_workers=7) as pool:
-        if "flood" in include:
-            jobs["flood"] = pool.submit(hazards.flood, geom)
-        if "wetlands" in include:
-            jobs["wetlands"] = pool.submit(hazards.wetlands, geom)
-        if "slope" in include:
-            jobs["terrain"] = pool.submit(terrain.slope, geom)
-        if "roads" in include:
-            jobs["access"] = pool.submit(roads.access, geom)
-        if "soils" in include:
-            jobs["soils"] = pool.submit(soils.soils, geom)
-        if "drivetimes" in include:
-            jobs["drivetimes"] = pool.submit(
-                drivetimes.drive_times, geom.centroid.x, geom.centroid.y
-            )
-        jobs["elevation"] = pool.submit(
-            terrain.point_elevation, geom.centroid.x, geom.centroid.y
-        )
+        def submit(name: str, fn, *args) -> None:
+            progress.update(job, name, "running")
+            started[name] = time.time()
+            futures[pool.submit(fn, *args)] = name
 
-        for name, future in jobs.items():
+        if "flood" in include:
+            submit("flood", hazards.flood, geom)
+        if "wetlands" in include:
+            submit("wetlands", hazards.wetlands, geom)
+        if "slope" in include:
+            submit("terrain", terrain.slope, geom)
+        if "roads" in include:
+            submit("access", roads.access, geom)
+        if "soils" in include:
+            submit("soils", soils.soils, geom)
+        if "drivetimes" in include:
+            submit("drivetimes", drivetimes.drive_times,
+                   geom.centroid.x, geom.centroid.y,
+                   lambda msg: progress.update(job, "drivetimes", "running", msg))
+        submit("elevation", terrain.point_elevation,
+               geom.centroid.x, geom.centroid.y)
+
+        for future in as_completed(futures):
+            name = futures[future]
+            secs = time.time() - started[name]
             try:
                 report[name] = future.result()
+                ok = report[name].get("available", True)
+                progress.update(job, name, "done" if ok else "failed",
+                                f"{secs:.1f}s")
             except Exception as exc:  # noqa: BLE001
                 report[name] = {
                     "available": False,
                     "error": f"{type(exc).__name__}: {exc}",
                 }
+                progress.update(job, name, "failed", type(exc).__name__)
 
     report["geometry"] = geo.shapely_to_geojson(geom)
     report["centroid"] = [geom.centroid.x, geom.centroid.y]
@@ -69,7 +88,8 @@ def parcel_report(lon: float, lat: float,
 
 
 def address_report(address: str,
-                   include: set[str] | None = None) -> dict[str, Any]:
+                   include: set[str] | None = None,
+                   job: str | None = None) -> dict[str, Any]:
     """Resolve a street address to a parcel and run the full report.
 
     Returns the report directly when there is one unambiguous match, or a
@@ -107,7 +127,7 @@ def address_report(address: str,
     matches = geocode.geocode(address)
 
     for m in matches:
-        report = parcel_report(m["lon"], m["lat"], include=include)
+        report = parcel_report(m["lon"], m["lat"], include=include, job=job)
         if report.get("found"):
             report["matched_address"] = m["address"]
             report["geocoder"] = m["source"]
@@ -120,7 +140,7 @@ def address_report(address: str,
     hits = geocode.search_address_field(address)
     if len(hits) == 1 and hits[0].get("geometry") is not None:
         c = hits[0]["geometry"].centroid
-        report = parcel_report(c.x, c.y, include=include)
+        report = parcel_report(c.x, c.y, include=include, job=job)
         if report.get("found"):
             report["matched_address"] = hits[0].get("situs_address")
             report["geocoder"] = "Assessor address field"

@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 python -m tnland doctor            # verify every live data source
 python -m tnland                   # run the app, opens 127.0.0.1:8823
-python selftest.py                 # 229 offline checks
+python selftest.py                 # 236 offline checks
 
 # CLI
 python -m tnland address "2926 Bryant Ridge Rd, Baxter, TN 38544"
@@ -172,6 +172,12 @@ query and paging helpers, endpoint discovery. SQLite cache at
 source decides its own fallback behaviour, because "try again" is rarely the
 right answer when a government service is down.
 
+**Progress** (`progress.py`) — in-memory job registry behind
+`/api/progress`. The frontend sends a client-generated `job` id with report
+requests and polls for per-source running/done/failed snapshots; the same
+events are logged so the serve terminal narrates activity. In-memory and
+single-process on purpose (local tool); jobs expire after five minutes.
+
 **Screening and comps** (`lists.py`, `comps.py`) — area filters and CSV
 export; comparable sales with median and quartile price per acre, available
 in four counties only.
@@ -290,6 +296,7 @@ tnland/
   lists.py        area screening, filters, CSV export
   server.py       FastAPI routes
   doctor.py       live health check
+  progress.py     live per-source status for the polling frontend
   sources/        parcels, hazards, terrain, roads, soils, drivetimes
   static/index.html   the entire frontend
 ```

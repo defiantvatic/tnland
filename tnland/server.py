@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from . import analysis, cache, comps as comps_mod, config, geo, lists
 from . import build_info
+from . import progress as progress_mod
 from .sources import parcels
 
 STATIC = Path(__file__).parent / "static"
@@ -42,17 +43,27 @@ def get_config() -> dict[str, Any]:
     }
 
 
+@app.get("/api/progress")
+def get_progress(job: str) -> dict[str, Any]:
+    """Live status of an in-flight report, for the polling frontend."""
+    return progress_mod.snapshot(job)
+
+
 @app.get("/api/parcel")
-def parcel(lon: float, lat: float, layers: str = "flood,wetlands,slope,roads,soils,drivetimes"):
+def parcel(lon: float, lat: float,
+           layers: str = "flood,wetlands,slope,roads,soils,drivetimes",
+           job: str | None = None):
     include = {x.strip() for x in layers.split(",") if x.strip()}
-    return analysis.parcel_report(lon, lat, include=include)
+    return analysis.parcel_report(lon, lat, include=include, job=job)
 
 
 @app.get("/api/report")
-def report(lon: float, lat: float, layers: str = "flood,wetlands,slope,roads,soils,drivetimes"):
+def report(lon: float, lat: float,
+           layers: str = "flood,wetlands,slope,roads,soils,drivetimes",
+           job: str | None = None):
     """Generate data for a detailed printable parcel report."""
     include = {x.strip() for x in layers.split(",") if x.strip()}
-    return analysis.parcel_report(lon, lat, include=include)
+    return analysis.parcel_report(lon, lat, include=include, job=job)
 
 
 @app.get("/report")
@@ -62,11 +73,13 @@ def report_page() -> FileResponse:
 
 
 @app.get("/api/search/address")
-def search_address(q: str, layers: str = "flood,wetlands,slope,roads,soils,drivetimes"):
+def search_address(q: str,
+                   layers: str = "flood,wetlands,slope,roads,soils,drivetimes",
+                   job: str | None = None):
     if len(q.strip()) < 5:
         raise HTTPException(400, "Address search needs at least 5 characters")
     include = {x.strip() for x in layers.split(",") if x.strip()}
-    return analysis.address_report(q, include=include)
+    return analysis.address_report(q, include=include, job=job)
 
 
 @app.get("/api/search/owner")

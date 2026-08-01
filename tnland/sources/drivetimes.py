@@ -188,15 +188,20 @@ def _nearest_by_road(lat: float, lon: float,
 
 # ---------------------------------------------------------------------------
 
-def drive_times(lon: float, lat: float) -> dict[str, Any]:
+def drive_times(lon: float, lat: float,
+                on_progress=None) -> dict[str, Any]:
     """Drive time to the nearest destination in every configured category.
 
     (lon, lat) argument order matches every other source in this app.
+    on_progress, when given, is called with a short message as each
+    category starts -- the UI shows it while the slow parts run.
     """
     results: list[dict[str, Any]] = []
     answered = 0
 
     for cat_key, cat in config.DRIVETIME_CATEGORIES.items():
+        if on_progress:
+            on_progress(f"searching: {cat['label']}")
         entry: dict[str, Any] = {
             "key": cat_key,
             "label": cat["label"],

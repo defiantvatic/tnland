@@ -1107,6 +1107,42 @@ check("every county service URL is https or documented http",
       all(v["url"].startswith("http") for v in config.COUNTY_SERVICES.values()))
 
 # ---------------------------------------------------------------------------
+print("\nProgress")
+
+from tnland import progress
+
+progress.update(None, "flood", "running")  # no job id: log-only, must not raise
+progress.update("jobX", "parcel", "running")
+progress.update("jobX", "flood", "running")
+progress.update("jobX", "flood", "done", "0.2s")
+_snap = progress.snapshot("jobX")
+check("progress keeps submission order",
+      [s["source"] for s in _snap["sources"]] == ["parcel", "flood"])
+check("progress keeps the latest status",
+      _snap["sources"][1]["status"] == "done"
+      and _snap["sources"][1]["detail"] == "0.2s")
+check("progress uses friendly labels",
+      _snap["sources"][0]["label"] == "Parcel lookup")
+check("unknown job snapshots empty", progress.snapshot("nope") == {"sources": []})
+
+progress._jobs["stale"] = {"touched": 0.0, "order": [], "events": {}}
+progress.update("jobY", "soils", "running")
+check("stale jobs are pruned on update", "stale" not in progress._jobs)
+
+# drive_times narrates each category through the optional callback.
+_msgs = []
+drivetimes._overpass_pois = _fake_pois
+drivetimes._matrix = lambda lat, lon, targets: {"sources_to_targets": [[
+    {"to_index": 0, "time": 1800, "distance": 12.0}]]}
+drivetimes.drive_times(-86.59, 35.86, on_progress=_msgs.append)
+drivetimes._overpass_pois = _orig_pois
+drivetimes._matrix = _orig_matrix
+check("drive_times reports one message per category",
+      len(_msgs) == len(config.DRIVETIME_CATEGORIES), str(_msgs))
+check("progress messages name the category",
+      any("Hospital" in m for m in _msgs), str(_msgs))
+
+# ---------------------------------------------------------------------------
 print("\nVersion")
 
 import re as _re

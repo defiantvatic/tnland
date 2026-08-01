@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import threading
 import webbrowser
@@ -55,6 +56,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Narrate source activity ("FEMA flood: running", "Drive times:
+    # searching: Hospital") in the terminal for every command, so the user
+    # can watch the tool work instead of staring at a silent prompt.
+    logging.basicConfig(format="  %(message)s")
+    logging.getLogger("tnland").setLevel(logging.INFO)
+
     parser = build_parser()
     args = parser.parse_args(argv)
     command = args.command or "serve"

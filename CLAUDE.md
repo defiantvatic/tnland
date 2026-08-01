@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 python -m tnland doctor            # verify every live data source
 python -m tnland                   # run the app, opens 127.0.0.1:8823
-python selftest.py                 # 227 offline checks
+python selftest.py                 # 229 offline checks
 
 # CLI
 python -m tnland address "2926 Bryant Ridge Rd, Baxter, TN 38544"
@@ -304,6 +304,15 @@ and 1 GB per day; the cache keeps normal use far below that.
 Other tunings: `HTTP_TIMEOUT`, `OVERPASS_TIMEOUT`, `DEM_TARGET_GSD_M`
 (slope raster resolution), `CACHE_TTL_DAYS`, `ROAD_FRONTAGE_BUFFER_M`,
 `ACCESS_SEARCH_RADIUS_M`.
+
+## Versioning
+
+`__version__` lives in `tnland/__init__.py`. Bump it with every change set
+(minor for features, patch for fixes). `build_info()` appends the git short
+hash of the code on disk plus `+edits` when the tree is dirty, and it is
+displayed in the web header, the serve banner, doctor, and the printable
+report footer -- that is how the user verifies which code is actually
+running when the two clones drift.
 
 ## Style
 

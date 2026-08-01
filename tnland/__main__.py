@@ -101,7 +101,8 @@ def main(argv: list[str] | None = None) -> int:
     import uvicorn
 
     url = f"http://{args.host}:{args.port}/"
-    print(f"\n  TN Land Tool running at {url}")
+    from . import build_info
+    print(f"\n  TN Land Tool v{build_info()} running at {url}")
     print("  Data: TN Comptroller, county GIS, FEMA, USFWS, USGS, USDA NRCS")
     print("  Ctrl-C to stop\n")
     if not args.no_browser:

@@ -72,7 +72,7 @@ a{color:var(--accent)}
   <div id="map"></div>
   <div id="side">
     <header>
-      <h1>Tennessee Land Tool</h1>
+      <h1>Tennessee Land Tool <span id="app-version" class="sub"></span></h1>
       <p>Free public data &middot; Comptroller, county GIS, FEMA, USFWS, USGS, NRCS</p>
     </header>
     <div class="tabs">
@@ -142,6 +142,7 @@ const layersCtl = L.control.layers(null, null, {position:'topleft'}).addTo(map);
 
 fetch('/api/config').then(r=>r.json()).then(cfg=>{
   CFG = cfg;
+  if (cfg.version) document.getElementById('app-version').textContent = 'v' + cfg.version;
   let first = true;
   for (const [key,b] of Object.entries(cfg.basemaps)) {
     const layer = L.tileLayer(b.url, {maxZoom:b.maxZoom||19, maxNativeZoom:b.maxZoom||19, attribution:b.attribution});

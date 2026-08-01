@@ -90,7 +90,8 @@ def _statewide_sample() -> dict[str, Any] | None:
 
 def run(verbose: bool = False, lon: float | None = None,
         lat: float | None = None) -> int:
-    print(f"\n{BOLD}TN Land Tool -- source health check{RESET}\n")
+    from . import build_info
+    print(f"\n{BOLD}TN Land Tool v{build_info()} -- source health check{RESET}\n")
 
     # --- endpoint reachability ------------------------------------------
     print(f"{BOLD}Endpoint discovery{RESET}")

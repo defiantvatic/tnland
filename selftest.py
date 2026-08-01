@@ -1107,6 +1107,19 @@ check("every county service URL is https or documented http",
       all(v["url"].startswith("http") for v in config.COUNTY_SERVICES.values()))
 
 # ---------------------------------------------------------------------------
+print("\nVersion")
+
+import re as _re
+
+import tnland as _pkg
+
+check("__version__ is semver", bool(_re.fullmatch(r"\d+\.\d+\.\d+", _pkg.__version__)),
+      _pkg.__version__)
+_bi = _pkg.build_info()
+check("build_info starts with the version and never raises",
+      isinstance(_bi, str) and _bi.startswith(_pkg.__version__), _bi)
+
+# ---------------------------------------------------------------------------
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 if FAIL:
     print("\nFailures:")

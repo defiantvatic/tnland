@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import analysis, cache, comps as comps_mod, config, geo, lists
+from . import build_info
 from .sources import parcels
 
 STATIC = Path(__file__).parent / "static"
@@ -26,6 +27,7 @@ def index() -> FileResponse:
 @app.get("/api/config")
 def get_config() -> dict[str, Any]:
     return {
+        "version": build_info(),
         "basemaps": config.BASEMAPS,
         "land_use_codes": config.LAND_USE_CODES,
         "vacant_codes": sorted(config.VACANT_LU_CODES),

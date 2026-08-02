@@ -44,6 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_addr.add_argument("--json", action="store_true")
     p_addr.add_argument("--drivetimes", action="store_true",
                         help="include drive times (slower on a cold cache)")
+    p_addr.add_argument("--min-acres", type=float, default=None,
+                        help='road searches ("0 Road Name") only list '
+                             'parcels of at least this deeded acreage')
 
     p_cache = sub.add_parser("cache", help="Inspect or clear the local cache")
     p_cache.add_argument("action", choices=["stats", "clear"], default="stats",
@@ -91,7 +94,8 @@ def main(argv: list[str] | None = None) -> int:
     if command == "address":
         from .analysis import address_report
 
-        report = address_report(args.query, include=_cli_layers(args))
+        report = address_report(args.query, include=_cli_layers(args),
+                                min_acres=getattr(args, "min_acres", None))
         if args.json:
             print(json.dumps(report, indent=2, default=str))
         else:

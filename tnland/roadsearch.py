@@ -104,7 +104,8 @@ def find_road(street: str, anchor: dict[str, Any],
 
 def parcels_on_road(street: str, locality: str,
                     search_miles: float = DEFAULT_SEARCH_MILES,
-                    max_parcels: int = 400) -> dict[str, Any]:
+                    max_parcels: int = 400,
+                    min_acres: float | None = None) -> dict[str, Any]:
     anchor = geocode.locality_anchor(locality)
     if anchor is None:
         return {
@@ -129,7 +130,8 @@ def parcels_on_road(street: str, locality: str,
 
     corridor = geo.buffer_m(road["geometry"], CORRIDOR_M)
     try:
-        found = parcels.in_area(corridor, max_records=max_parcels)
+        found = parcels.in_area(corridor, max_records=max_parcels,
+                                min_acres=min_acres)
     except SourceError as exc:
         return {"found": False, "message": f"Parcel query failed: {exc}"}
 
@@ -175,10 +177,14 @@ def parcels_on_road(street: str, locality: str,
         "count": len(rows),
         "raw_land_count": raw,
         "results": rows,
+        "min_acres": min_acres,
         "message": (
             f"{len(rows)} parcels front {', '.join(road['names'][:3])} "
             f"({road['length_miles']} mi mapped); {raw} are vacant, "
             "agricultural or timber."
+            + (f" Filtered to {min_acres:g}+ deeded acres -- parcels with "
+               "no recorded acreage are excluded by the filter."
+               if min_acres else "")
         ),
         "note": (
             "Listing sites use a zero house number when the county has not "

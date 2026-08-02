@@ -88,6 +88,9 @@ a{color:var(--accent)}
       <div class="row">
         <input id="q-addr" placeholder="0 McBroom Branch Rd, Baxter, TN 38544"
                onkeydown="if(event.key==='Enter')searchAddress()">
+        <input id="q-minacres" type="number" min="0" step="1" placeholder="min ac"
+               title="Road searches only list parcels of at least this deeded acreage"
+               style="flex:0 0 74px" onkeydown="if(event.key==='Enter')searchAddress()">
         <button class="ghost" style="flex:0 0 70px;margin:0" onclick="searchAddress()">Go</button>
       </div>
       <label>Owner name</label>
@@ -411,8 +414,10 @@ async function searchAddress(){
   parcelLayer.clearLayers(); compsLayer.clearLayers(); hitLayer.clearLayers();
   const job = newJob();
   const stopProgress = startProgress(job, out);
+  const minAc = parseFloat(document.getElementById('q-minacres').value);
+  const minParam = (minAc > 0) ? '&min_acres=' + minAc : '';
   let r;
-  try { r = await (await fetch('/api/search/address?q='+encodeURIComponent(q)+'&job='+job)).json(); }
+  try { r = await (await fetch('/api/search/address?q='+encodeURIComponent(q)+'&job='+job+minParam)).json(); }
   catch(e){ out.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
   finally { stopProgress(); }
 
@@ -465,7 +470,8 @@ function renderRoad(r){
       <div class="big">${r.count} parcels</div>
       <div class="sub">on ${esc((r.road_names||[]).slice(0,3).join(', '))}
         &middot; ${r.road_length_miles} mi mapped
-        &middot; ${r.raw_land_count} vacant / ag / timber</div>
+        &middot; ${r.raw_land_count} vacant / ag / timber${
+        r.min_acres ? ` &middot; ${r.min_acres}+ acres only` : ''}</div>
       <div class="note">${esc(r.note||'')}</div>
     </div>
     <h2>Parcels on this road</h2>

@@ -1101,6 +1101,37 @@ check("route split keeps the number in the street",
 check("apostrophes stay escaped in route names",
       "''" in _road_where("O'Brien Highway 5"))
 
+# Minimum-acreage filter: applied server-side so the max_parcels cap counts
+# parcels that matter, and the value is coerced to a number before it can
+# reach a WHERE clause.
+check("acres filter builds a numeric clause",
+      parcels._acres_where(10, "DEEDAC") == "DEEDAC >= 10.0")
+check("no filter means no clause",
+      parcels._acres_where(None, "DEEDAC") is None
+      and parcels._acres_where(0, "DEEDAC") is None)
+_inj_ok = False
+try:
+    parcels._acres_where("10; DROP TABLE", "DEEDAC")
+except (TypeError, ValueError):
+    _inj_ok = True
+check("non-numeric acreage cannot reach the query", _inj_ok)
+
+import inspect as _insp2
+
+from tnland import roadsearch as _roadsearch
+from tnland import server as _server2
+
+check("road search accepts min_acres",
+      "min_acres" in _insp2.signature(_roadsearch.parcels_on_road).parameters)
+check("address API accepts min_acres",
+      "min_acres" in _insp2.signature(_server2.search_address).parameters)
+check("CLI address accepts --min-acres",
+      "--min-acres" in " ".join(
+          a for action in __import__("tnland.__main__",
+                                     fromlist=["build_parser"]).build_parser()
+          ._subparsers._group_actions[0].choices["address"]._actions
+          for a in action.option_strings))
+
 from tnland import roadsearch
 
 # Road results must sort raw land first, then by descending acreage.

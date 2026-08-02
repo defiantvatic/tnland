@@ -256,26 +256,53 @@ def _enrich_statewide(rec: dict[str, Any]) -> None:
         rec["notes"].append(f"Land-use layer unavailable: {exc}")
 
 
-def in_area(geom_wgs84, max_records: int = 5000) -> list[dict[str, Any]]:
-    """All parcels intersecting a drawn polygon. Used for list building."""
+def _acres_where(min_acres: float | None, field: str) -> str | None:
+    """WHERE clause for a minimum-acreage filter, or None for no filter.
+
+    float() both validates and neutralises the value before it enters the
+    query string. Note the trade-off, stated to the user where this is
+    used: parcels with no recorded acreage cannot pass a >= test, so the
+    filter drops them.
+    """
+    if not min_acres or min_acres <= 0:
+        return None
+    return f"{field} >= {float(min_acres)}"
+
+
+def in_area(geom_wgs84, max_records: int = 5000,
+            min_acres: float | None = None) -> list[dict[str, Any]]:
+    """All parcels intersecting a drawn polygon. Used for list building.
+
+    min_acres filters server-side, so the max_records cap applies to
+    parcels that matter rather than being eaten by small lots.
+    """
     esri = geo.shapely_to_esri(geo.simplify_for_query(geom_wgs84))
     out: list[dict[str, Any]] = []
 
+    kwargs: dict[str, Any] = {}
+    where = _acres_where(min_acres, "DEEDAC")
+    if where:
+        kwargs["where"] = where
     try:
         feats = arcgis_query_all(
             _statewide_url(),
             geometry=esri,
             out_fields=list(config.TN_PARCEL_FIELDS.values()),
             max_records=max_records,
+            **kwargs,
         )
         out.extend(_from_statewide(f) for f in feats)
     except SourceError:
         pass
 
     for county, cfg in config.COUNTY_SERVICES.items():
+        ckwargs: dict[str, Any] = {}
+        cwhere = _acres_where(min_acres, cfg["fields"].get("acres", ""))
+        if cwhere and cfg["fields"].get("acres"):
+            ckwargs["where"] = cwhere
         try:
             feats = arcgis_query_all(
-                cfg["url"], geometry=esri, max_records=max_records
+                cfg["url"], geometry=esri, max_records=max_records, **ckwargs
             )
         except Exception:  # noqa: BLE001
             continue

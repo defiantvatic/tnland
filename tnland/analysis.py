@@ -89,7 +89,8 @@ def parcel_report(lon: float, lat: float,
 
 def address_report(address: str,
                    include: set[str] | None = None,
-                   job: str | None = None) -> dict[str, Any]:
+                   job: str | None = None,
+                   min_acres: float | None = None) -> dict[str, Any]:
     """Resolve a street address to a parcel and run the full report.
 
     Returns the report directly when there is one unambiguous match, or a
@@ -105,7 +106,7 @@ def address_report(address: str,
 
         street, locality = geocode.split_address(address)
         if street and locality:
-            result = parcels_on_road(street, locality)
+            result = parcels_on_road(street, locality, min_acres=min_acres)
             result["kind"] = "road"
             result["query"] = address
             if result.get("found"):

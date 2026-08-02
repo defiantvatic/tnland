@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 python -m tnland doctor            # verify every live data source
 python -m tnland                   # run the app, opens 127.0.0.1:8823
-python selftest.py                 # 261 offline checks
+python selftest.py                 # 267 offline checks
 
 # CLI
 python -m tnland address "2926 Bryant Ridge Rd, Baxter, TN 38544"

@@ -75,11 +75,13 @@ def report_page() -> FileResponse:
 @app.get("/api/search/address")
 def search_address(q: str,
                    layers: str = "flood,wetlands,slope,roads,soils",
-                   job: str | None = None):
+                   job: str | None = None,
+                   min_acres: float | None = None):
     if len(q.strip()) < 5:
         raise HTTPException(400, "Address search needs at least 5 characters")
     include = {x.strip() for x in layers.split(",") if x.strip()}
-    return analysis.address_report(q, include=include, job=job)
+    return analysis.address_report(q, include=include, job=job,
+                                   min_acres=min_acres)
 
 
 @app.get("/api/search/owner")

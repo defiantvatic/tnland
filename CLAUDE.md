@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 python -m tnland doctor            # verify every live data source
 python -m tnland                   # run the app, opens 127.0.0.1:8823
-python selftest.py                 # 236 offline checks
+python selftest.py                 # 253 offline checks
 
 # CLI
 python -m tnland address "2926 Bryant Ridge Rd, Baxter, TN 38544"
@@ -130,9 +130,18 @@ adapters in `config.COUNTY_SERVICES`; four have no public service at all.
 (NRCS SSURGO), `geocode.py` (Census geocoder, falling back to Nominatim and
 then to the assessor's own ADDRESS field), `drivetimes.py` (nearest
 hospital / grocery / pharmacy / big-box / airport by real road-network
-drive time -- Overpass finds candidates, a Valhalla time matrix picks the
-truly nearest by road, thresholds live in `config.DRIVETIME_CATEGORIES`;
+drive time -- ONE combined Overpass query finds candidates for every
+tag category at once, results are classified locally from their tags,
+and per-category Valhalla time matrices run concurrently to pick the
+truly nearest by road; thresholds live in `config.DRIVETIME_CATEGORIES`,
 informational categories use `threshold_min: None` and never flag).
+
+Drive times are the slow layer, so they are ON DEMAND: map clicks,
+address search and the CLI default to the fast layers, with a
+"Check drive times" button on the panel (and `--drivetimes` on the CLI)
+to run them for a parcel worth the wait. `/api/report` -- the printable
+report -- always includes them: generating a report is the "I'm serious
+about this parcel" signal. Tests pin these defaults.
 
 Address lookup geocodes to a point and asks which parcel contains it, rather
 than matching the parcel layer's ADDRESS field directly. That field is often

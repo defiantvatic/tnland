@@ -36,10 +36,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_parcel.add_argument("lon", type=float)
     p_parcel.add_argument("lat", type=float)
     p_parcel.add_argument("--json", action="store_true")
+    p_parcel.add_argument("--drivetimes", action="store_true",
+                          help="include drive times (slower on a cold cache)")
 
     p_addr = sub.add_parser("address", help="Report for a street address")
     p_addr.add_argument("query", help='e.g. "2926 Bryant Ridge Rd, Baxter, TN"')
     p_addr.add_argument("--json", action="store_true")
+    p_addr.add_argument("--drivetimes", action="store_true",
+                        help="include drive times (slower on a cold cache)")
 
     p_cache = sub.add_parser("cache", help="Inspect or clear the local cache")
     p_cache.add_argument("action", choices=["stats", "clear"], default="stats",
@@ -87,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     if command == "address":
         from .analysis import address_report
 
-        report = address_report(args.query)
+        report = address_report(args.query, include=_cli_layers(args))
         if args.json:
             print(json.dumps(report, indent=2, default=str))
         else:
@@ -97,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     if command == "parcel":
         from .analysis import parcel_report
 
-        report = parcel_report(args.lon, args.lat)
+        report = parcel_report(args.lon, args.lat, include=_cli_layers(args))
         if args.json:
             print(json.dumps(report, indent=2, default=str))
         else:
@@ -117,6 +121,14 @@ def main(argv: list[str] | None = None) -> int:
     uvicorn.run("tnland.server:app", host=args.host, port=args.port,
                 log_level="warning")
     return 0
+
+
+def _cli_layers(args) -> set[str]:
+    """Fast by default; --drivetimes opts into the slow layer."""
+    layers = {"flood", "wetlands", "slope", "roads", "soils"}
+    if getattr(args, "drivetimes", False):
+        layers.add("drivetimes")
+    return layers
 
 
 def _print_report(report: dict) -> None:
@@ -162,6 +174,8 @@ def _print_report(report: dict) -> None:
             flag["level"], "  ")
         print(f" {mark} {flag['text']}")
     dt = report.get("drivetimes", {})
+    if not dt:
+        print("\nDrive times: not checked (pass --drivetimes to include them)")
     if dt.get("available"):
         print("\nDrive times (free-flow, from parcel centroid):")
         for r in dt.get("results", []):

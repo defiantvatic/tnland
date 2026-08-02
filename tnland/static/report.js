@@ -7,11 +7,32 @@ function getQueryParams() {
   };
 }
 
-// Fetch parcel data from API
+// Fetch parcel data from API, narrating per-source progress while it runs.
+// The report includes drive times automatically (generating a report is the
+// "I'm serious about this parcel" signal), so this can take a while on a
+// cold cache -- the narration shows it working.
 async function fetchParcelData(lon, lat) {
-  const response = await fetch(`/api/report?lon=${lon}&lat=${lat}`);
-  if (!response.ok) throw new Error('Failed to fetch parcel data');
-  return response.json();
+  const job = 'j' + Math.random().toString(36).slice(2);
+  const target = document.getElementById('report-content');
+  target.innerHTML = '<p>Building report&hellip;</p>';
+  const marks = {done: '✓', failed: '✗', running: '⏳'};
+  const timer = setInterval(async () => {
+    try {
+      const p = await (await fetch('/api/progress?job=' + job)).json();
+      if (!p.sources || !p.sources.length) return;
+      target.innerHTML = '<p>Building report&hellip;</p>' + p.sources.map(s =>
+        `<p style="margin:2px 0">${marks[s.status] || '⏳'} ${s.label}` +
+        (s.detail ? ` <span style="opacity:.6">${s.detail}</span>` : '') +
+        '</p>').join('');
+    } catch (e) { /* keep polling */ }
+  }, 400);
+  try {
+    const response = await fetch(`/api/report?lon=${lon}&lat=${lat}&job=${job}`);
+    if (!response.ok) throw new Error('Failed to fetch parcel data');
+    return await response.json();
+  } finally {
+    clearInterval(timer);
+  }
 }
 
 // Main render function

@@ -534,19 +534,22 @@ check("all-unreachable returns None, not an invented time",
 drivetimes._matrix = _orig_matrix
 
 # Overpass fixture parsing: ways carry "center", nodes carry lat/lon,
-# unnamed and duplicate elements are dropped.
+# unnamed and duplicate elements are dropped, tags are kept for the
+# classification step.
 _pois = drivetimes._extract_pois({"elements": [
     {"type": "node", "id": 1, "lat": 35.9, "lon": -86.5,
-     "tags": {"name": "Cookeville Regional"}},
+     "tags": {"name": "Cookeville Regional", "amenity": "hospital"}},
     {"type": "way", "id": 2, "center": {"lat": 35.8, "lon": -86.4},
-     "tags": {"name": "Ascension Saint Thomas"}},
+     "tags": {"name": "Ascension Saint Thomas", "amenity": "hospital"}},
     {"type": "node", "id": 1, "lat": 35.9, "lon": -86.5,
-     "tags": {"name": "Cookeville Regional"}},
+     "tags": {"name": "Cookeville Regional", "amenity": "hospital"}},
     {"type": "node", "id": 3, "lat": 35.7, "lon": -86.3, "tags": {}},
 ]})
 check("POIs parsed from nodes and way centers", len(_pois) == 2, str(_pois))
+check("POIs keep their tags for classification",
+      _pois[0]["tags"].get("amenity") == "hospital")
 
-# A mirror success reorders the crawl so the next category starts at the
+# A mirror success reorders the crawl so the next query starts at the
 # mirror that just answered instead of re-timing-out on a dead one.
 drivetimes._mirror_order = None
 check("mirror order starts as configured",
@@ -557,36 +560,97 @@ check("winning mirror moves to the front",
       and sorted(drivetimes._mirrors()) == sorted(config.OVERPASS))
 drivetimes._mirror_order = None
 
-# Grid snapping shares one cached query across a whole cell.
-check("nearby points snap to one POI cache key",
-      drivetimes._poi_query(config.DRIVETIME_CATEGORIES["hospital"], 35.8601, -86.5899)
-      == drivetimes._poi_query(config.DRIVETIME_CATEGORIES["hospital"], 35.8607, -86.5893))
+# One combined Overpass query covers every tag category, each clause at its
+# own radius; grid snapping keeps the query (and so the cache key) identical
+# across a whole cell.
+_tag_cats = {k: c for k, c in config.DRIVETIME_CATEGORIES.items()
+             if "fixed" not in c}
+_q = drivetimes._combined_query(_tag_cats, 35.8601, -86.5899)
+check("combined query has a clause per tag category (brands add two)",
+      _q.count("(around:") == len(_tag_cats) + 1, _q)
+check("combined query carries per-category radii",
+      str(int(30 * 1609.34) + 3000) in _q and str(int(55 * 1609.34) + 3000) in _q)
+check("nearby points produce one combined-query cache key",
+      _q == drivetimes._combined_query(_tag_cats, 35.8607, -86.5893))
 
-# Full drive_times() with both services mocked: thresholds classify, the
-# info-only category never sets "over", and a per-category failure does not
-# sink the panel.
-_orig_pois = drivetimes._overpass_pois
-def _fake_pois(cat, lat, lon):
-    if "brands" in cat:
-        raise drivetimes.SourceError("all mirrors down")
-    return [{"name": "Fixture Place", "lat": lat + 0.05, "lon": lon}]
-drivetimes._overpass_pois = _fake_pois
+# Classification: the local predicate must agree with the Overpass filter.
+_hosp = config.DRIVETIME_CATEGORIES["hospital"]
+_bigbox = config.DRIVETIME_CATEGORIES["big_box"]
+check("equality predicate matches",
+      drivetimes._predicate(_hosp)({"amenity": "hospital", "name": "X"}))
+check("equality predicate rejects other tags",
+      not drivetimes._predicate(_hosp)({"amenity": "pharmacy", "name": "X"}))
+check("brands predicate matches a Walmart shop by name",
+      drivetimes._predicate(_bigbox)({"shop": "supermarket",
+                                      "name": "Walmart Supercenter"}))
+check("brands predicate requires a shop tag",
+      not drivetimes._predicate(_bigbox)({"name": "Walmart Road"}))
+_rx_cat = {"overpass": 'nwr["shop"~"supermarket|greengrocer"]'}
+check("regex (~) predicate matches alternatives",
+      drivetimes._predicate(_rx_cat)({"shop": "greengrocer"})
+      and not drivetimes._predicate(_rx_cat)({"shop": "bakery"}))
+
+# Each category re-applies its own radius to the combined result set: a
+# match ~90 mi out is a big-box candidate (55 mi cat would drop it too --
+# use hospital 30 mi) but never a hospital one.
+_far = {"name": "Far Hospital", "lat": 35.86, "lon": -88.2,
+        "tags": {"amenity": "hospital", "name": "Far Hospital"}}
+_near = {"name": "Near Hospital", "lat": 35.90, "lon": -86.59,
+         "tags": {"amenity": "hospital", "name": "Near Hospital"}}
+_got = drivetimes._candidates_for(_hosp, [_far, _near], 35.86, -86.59)
+check("category radius filters the combined results",
+      [p["name"] for p in _got] == ["Near Hospital"], str(_got))
+
+# Full drive_times() with both services mocked: one combined place set is
+# classified into categories, thresholds classify results, the info-only
+# category never sets "over", and empty categories say so.
+_orig_places = drivetimes._overpass_places
+_fixture_pois = [
+    {"name": "Fixture Hospital", "lat": 35.91, "lon": -86.59,
+     "tags": {"name": "Fixture Hospital", "amenity": "hospital"}},
+    {"name": "Fixture Kroger", "lat": 35.88, "lon": -86.59,
+     "tags": {"name": "Fixture Kroger", "shop": "supermarket"}},
+    {"name": "Fixture Walmart", "lat": 35.87, "lon": -86.60,
+     "tags": {"name": "Fixture Walmart", "shop": "department_store"}},
+    {"name": "Fixture Marina", "lat": 35.85, "lon": -86.55,
+     "tags": {"name": "Fixture Marina", "leisure": "marina"}},
+]
+drivetimes._overpass_places = lambda tc, lat, lon: list(_fixture_pois)
 drivetimes._matrix = lambda lat, lon, targets: {"sources_to_targets": [[
     {"to_index": 0, "time": 1800, "distance": 12.0}]]}
 _dt = drivetimes.drive_times(-86.59, 35.86)
-drivetimes._overpass_pois = _orig_pois
+drivetimes._overpass_places = _orig_places
 drivetimes._matrix = _orig_matrix
 
 _by_key = {r["key"]: r for r in _dt["results"]}
-check("panel available despite one failed category", _dt["available"] is True)
-check("failed category names the service error",
-      "mirrors down" in _by_key["big_box"].get("error", ""))
-check("30 min exceeds a 20 min threshold",
-      _by_key["hospital"]["over"] is True)
+check("combined results classify into categories",
+      _by_key["hospital"]["found"] and _by_key["grocery"]["found"]
+      and _by_key["big_box"]["found"], str(_by_key))
+check("results keep config order",
+      [r["key"] for r in _dt["results"]] == list(config.DRIVETIME_CATEGORIES))
+check("30 min exceeds a 20 min threshold", _by_key["hospital"]["over"] is True)
 check("30 min meets a 120 min threshold",
       _by_key["large_airport"]["over"] is False)
 check("info-only category never flags over",
       _by_key["marina"]["found"] is True and _by_key["marina"]["over"] is None)
+check("empty category says nothing matched",
+      _by_key["pharmacy"]["found"] is False
+      and "nothing matching" in _by_key["pharmacy"]["note"])
+
+# One Overpass outage fails every tag category with the service error, but
+# fixed categories (airports) still answer through Valhalla alone.
+drivetimes._overpass_places = lambda tc, lat, lon: (_ for _ in ()).throw(
+    drivetimes.SourceError("all mirrors down"))
+drivetimes._matrix = lambda lat, lon, targets: {"sources_to_targets": [[
+    {"to_index": 0, "time": 1800, "distance": 12.0}]]}
+_dt2 = drivetimes.drive_times(-86.59, 35.86)
+drivetimes._overpass_places = _orig_places
+drivetimes._matrix = _orig_matrix
+_by2 = {r["key"]: r for r in _dt2["results"]}
+check("Overpass outage names the error on tag categories",
+      "mirrors down" in _by2["hospital"].get("error", ""), str(_by2["hospital"]))
+check("fixed categories survive an Overpass outage",
+      _dt2["available"] is True and _by2["large_airport"]["found"] is True)
 
 # ---------------------------------------------------------------------------
 print("\nFlags")
@@ -1129,18 +1193,48 @@ progress._jobs["stale"] = {"touched": 0.0, "order": [], "events": {}}
 progress.update("jobY", "soils", "running")
 check("stale jobs are pruned on update", "stale" not in progress._jobs)
 
-# drive_times narrates each category through the optional callback.
+# drive_times narrates through the optional callback: one combined search
+# message, then a routing message per category that has candidates.
 _msgs = []
-drivetimes._overpass_pois = _fake_pois
+drivetimes._overpass_places = lambda tc, lat, lon: list(_fixture_pois)
 drivetimes._matrix = lambda lat, lon, targets: {"sources_to_targets": [[
     {"to_index": 0, "time": 1800, "distance": 12.0}]]}
 drivetimes.drive_times(-86.59, 35.86, on_progress=_msgs.append)
-drivetimes._overpass_pois = _orig_pois
+drivetimes._overpass_places = _orig_places
 drivetimes._matrix = _orig_matrix
-check("drive_times reports one message per category",
-      len(_msgs) == len(config.DRIVETIME_CATEGORIES), str(_msgs))
-check("progress messages name the category",
-      any("Hospital" in m for m in _msgs), str(_msgs))
+check("progress narrates the combined place search",
+      any("searching places" in m for m in _msgs), str(_msgs))
+check("progress narrates routing per answered category",
+      any("routing: Hospital" in m for m in _msgs)
+      and any("routing: Large airport" in m for m in _msgs), str(_msgs))
+
+# ---------------------------------------------------------------------------
+print("\nFast-default routing")
+
+import inspect as _inspect
+
+from tnland import server as _server
+
+_parcel_layers = _inspect.signature(_server.parcel).parameters["layers"].default
+_report_layers = _inspect.signature(_server.report).parameters["layers"].default
+_addr_layers = _inspect.signature(_server.search_address).parameters["layers"].default
+check("map click skips drive times by default", "drivetimes" not in _parcel_layers)
+check("address search skips drive times by default", "drivetimes" not in _addr_layers)
+check("printable report always includes drive times", "drivetimes" in _report_layers)
+
+from tnland.__main__ import _cli_layers
+
+
+class _A:
+    drivetimes = False
+
+
+class _B:
+    drivetimes = True
+
+
+check("CLI is fast by default", "drivetimes" not in _cli_layers(_A()))
+check("CLI --drivetimes opts in", "drivetimes" in _cli_layers(_B()))
 
 # ---------------------------------------------------------------------------
 print("\nVersion")

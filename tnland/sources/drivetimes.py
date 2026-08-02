@@ -5,16 +5,18 @@ road-network drive time, not straight-line distance. Around the Highland Rim
 that distinction is the whole point: a river gorge can turn five air-miles
 into a twenty-five minute drive.
 
-Two free, keyless services:
+Two free, keyless services, arranged for speed:
 
-  1. Overpass finds candidate places by OSM tag (or brand regex, for
-     categories like big-box that have no tag). Results are cached against
-     a grid-snapped centre, so every parcel in the same ~2 km cell shares
-     one query -- the hospitals near a parcel do not change between clicks.
-  2. Valhalla (FOSSGIS) answers one time matrix per category: the nearest
-     candidates by air go in, the truly nearest by road comes out. Matrixing
-     several candidates matters; taking the nearest-by-air alone silently
-     picks the wrong destination whenever terrain intervenes.
+  1. Overpass finds candidate places for ALL tag-based categories in ONE
+     combined query (one round trip instead of five -- and one timeout
+     instead of five when a mirror is down). Results are classified into
+     categories locally from their tags, and cached against a grid-snapped
+     centre so every parcel in the same ~2 km cell shares the query.
+  2. Valhalla (FOSSGIS) answers one time matrix per category, run
+     concurrently: the nearest candidates by air go in, the truly nearest
+     by road comes out. Matrixing several candidates matters; taking the
+     nearest-by-air alone silently picks the wrong destination whenever
+     terrain intervenes.
 
 Per-category failures name the failing service and never sink the whole
 panel. Times are free-flow -- no traffic model -- which around rural
@@ -23,6 +25,8 @@ Tennessee is close to reality.
 
 from __future__ import annotations
 
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import asin, cos, radians, sin, sqrt
 from typing import Any
 
@@ -45,26 +49,32 @@ def _snap(x: float) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Candidate places
+# Candidate places: one Overpass query for every tag-based category
 # ---------------------------------------------------------------------------
 
-def _poi_query(cat: dict[str, Any], lat: float, lon: float) -> str:
-    # Snap the centre for cache sharing; widen the radius so the snap can
-    # never exclude a place that a parcel-exact query would have found.
-    slat, slon = _snap(lat), _snap(lon)
+def _clauses(cat: dict[str, Any], slat: float, slon: float) -> list[str]:
+    # Widen each radius so grid snapping can never exclude a place that a
+    # parcel-exact query would have found.
     radius_m = int(cat["search_mi"] * 1609.34) + 3000
     if "brands" in cat:
         rx = cat["brands"]
-        body = (f'nwr["shop"]["brand"~"{rx}",i](around:{radius_m},{slat},{slon});'
-                f'nwr["shop"]["name"~"{rx}",i](around:{radius_m},{slat},{slon});')
-    else:
-        body = f'{cat["overpass"]}(around:{radius_m},{slat},{slon});'
+        return [
+            f'nwr["shop"]["brand"~"{rx}",i](around:{radius_m},{slat},{slon});',
+            f'nwr["shop"]["name"~"{rx}",i](around:{radius_m},{slat},{slon});',
+        ]
+    return [f'{cat["overpass"]}(around:{radius_m},{slat},{slon});']
+
+
+def _combined_query(tag_cats: dict[str, dict[str, Any]],
+                    lat: float, lon: float) -> str:
+    slat, slon = _snap(lat), _snap(lon)
+    body = "".join(c for cat in tag_cats.values() for c in _clauses(cat, slat, slon))
     return f"[out:json][timeout:25];({body});out center tags;"
 
 
-# Winner-first mirror order, learned per process. Seven categories crawling
-# the same dead mirror at a 25 s timeout each turns one Overpass outage into
-# minutes of dead waiting; after the first success the working mirror leads.
+# Winner-first mirror order, learned per process. Retrying a dead mirror at
+# a 25 s timeout turns one Overpass outage into minutes of dead waiting;
+# after the first success the working mirror leads.
 _mirror_order: list[str] | None = None
 
 
@@ -77,8 +87,9 @@ def _remember_winner(endpoint: str) -> None:
     _mirror_order = [endpoint] + [m for m in config.OVERPASS if m != endpoint]
 
 
-def _overpass_pois(cat: dict[str, Any], lat: float, lon: float) -> list[dict[str, Any]]:
-    query = _poi_query(cat, lat, lon)
+def _overpass_places(tag_cats: dict[str, dict[str, Any]],
+                     lat: float, lon: float) -> list[dict[str, Any]]:
+    query = _combined_query(tag_cats, lat, lon)
     key = cache.make_key("overpass-poi", query)
     hit = cache.get(key, ttl_days=config.DRIVETIME_POI_TTL_DAYS)
     if hit is not None:
@@ -115,13 +126,59 @@ def _extract_pois(data: dict[str, Any]) -> list[dict[str, Any]]:
         seen.add(ident)
         lat = el.get("lat") or (el.get("center") or {}).get("lat")
         lon = el.get("lon") or (el.get("center") or {}).get("lon")
-        name = (el.get("tags") or {}).get("name")
+        tags = el.get("tags") or {}
         # Unnamed matches are dropped: a result the user cannot verify by
         # name is worth less than an honest "none found".
-        if lat is None or lon is None or not name:
+        if lat is None or lon is None or not tags.get("name"):
             continue
-        pois.append({"name": name, "lat": lat, "lon": lon})
+        pois.append({"name": tags["name"], "lat": lat, "lon": lon,
+                     "tags": tags})
     return pois
+
+
+# ---------------------------------------------------------------------------
+# Classifying combined results back into categories
+# ---------------------------------------------------------------------------
+
+_FILTER_RX = re.compile(r'\["([^"]+)"([=~])"((?:[^"\\]|\\.)*)"\]')
+
+
+def _predicate(cat: dict[str, Any]):
+    """A tags -> bool test equivalent to the category's Overpass filter.
+
+    Supports the filter shapes the configs use: ["key"="value"] equality
+    and ["key"~"regex"] matches, ANDed within one clause. Brand categories
+    match the brands regex against the brand or name tag of any shop.
+    """
+    if "brands" in cat:
+        rx = re.compile(cat["brands"], re.IGNORECASE)
+        return lambda t: "shop" in t and bool(
+            rx.search(t.get("brand", "")) or rx.search(t.get("name", "")))
+    pairs = _FILTER_RX.findall(cat["overpass"])
+
+    def pred(tags: dict[str, str]) -> bool:
+        for key, op, val in pairs:
+            actual = tags.get(key)
+            if actual is None:
+                return False
+            if op == "=" and actual != val:
+                return False
+            if op == "~" and not re.search(val, actual, re.IGNORECASE):
+                return False
+        return True
+    return pred
+
+
+def _candidates_for(cat: dict[str, Any], pois: list[dict[str, Any]],
+                    lat: float, lon: float) -> list[dict[str, Any]]:
+    # The combined query unions every category's radius, so a big-box hit
+    # at 50 mi is in the result set; each category must re-apply its own
+    # radius (plus the same margin the query added).
+    pred = _predicate(cat)
+    max_km = cat["search_mi"] * 1.60934 + 3.0
+    return [p for p in pois
+            if pred(p.get("tags", {}))
+            and _haversine_km(lat, lon, p["lat"], p["lon"]) <= max_km]
 
 
 # ---------------------------------------------------------------------------
@@ -193,48 +250,74 @@ def drive_times(lon: float, lat: float,
     """Drive time to the nearest destination in every configured category.
 
     (lon, lat) argument order matches every other source in this app.
-    on_progress, when given, is called with a short message as each
-    category starts -- the UI shows it while the slow parts run.
+    on_progress, when given, is called with short messages as the work
+    advances -- the UI shows them while the slow parts run.
     """
-    results: list[dict[str, Any]] = []
-    answered = 0
+    cats = config.DRIVETIME_CATEGORIES
+    tag_cats = {k: c for k, c in cats.items() if "fixed" not in c}
 
-    for cat_key, cat in config.DRIVETIME_CATEGORIES.items():
+    pois: list[dict[str, Any]] | None = None
+    poi_error: str | None = None
+    if tag_cats:
         if on_progress:
-            on_progress(f"searching: {cat['label']}")
+            on_progress("searching places (one query, all categories)")
+        try:
+            pois = _overpass_places(tag_cats, lat, lon)
+        except SourceError as exc:
+            poi_error = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            poi_error = f"{type(exc).__name__}: {exc}"
+
+    def work(cat_key: str, cat: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+        """Returns (entry, answered) -- answered False means a service died."""
         entry: dict[str, Any] = {
             "key": cat_key,
             "label": cat["label"],
             "threshold_min": cat.get("threshold_min"),
         }
+        if "fixed" in cat:
+            candidates = list(cat["fixed"])
+        elif poi_error is not None:
+            entry.update({"found": False, "error": poi_error})
+            return entry, False
+        else:
+            candidates = _candidates_for(cat, pois or [], lat, lon)
+        if not candidates:
+            entry.update({"found": False,
+                          "note": f"nothing matching within {cat['search_mi']} mi"})
+            return entry, True
         try:
-            if "fixed" in cat:
-                candidates = list(cat["fixed"])
-            else:
-                candidates = _overpass_pois(cat, lat, lon)
-            if not candidates:
-                entry.update({
-                    "found": False,
-                    "note": f"nothing matching within {cat['search_mi']} mi",
-                })
-            else:
-                nearest = _nearest_by_road(lat, lon, candidates)
-                if nearest is None:
-                    entry.update({"found": False,
-                                  "note": "no drivable route found"})
-                else:
-                    entry.update({"found": True, **nearest})
-                    t = cat.get("threshold_min")
-                    entry["over"] = (nearest["minutes"] > t) if t else None
-            answered += 1
+            if on_progress:
+                on_progress(f"routing: {cat['label']}")
+            nearest = _nearest_by_road(lat, lon, candidates)
         except SourceError as exc:
             entry.update({"found": False, "error": str(exc)})
+            return entry, False
         except Exception as exc:  # noqa: BLE001
             entry.update({"found": False,
                           "error": f"{type(exc).__name__}: {exc}"})
-        results.append(entry)
+            return entry, False
+        if nearest is None:
+            entry.update({"found": False, "note": "no drivable route found"})
+            return entry, True
+        entry.update({"found": True, **nearest})
+        t = cat.get("threshold_min")
+        entry["over"] = (nearest["minutes"] > t) if t else None
+        return entry, True
 
-    if answered == 0:
+    # Each category's matrix call is independent; run them together. Four
+    # workers keeps the load on the free Valhalla instance polite.
+    done: dict[str, tuple[dict[str, Any], bool]] = {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(work, k, c): k for k, c in cats.items()}
+        for future in as_completed(futures):
+            entry, answered = future.result()
+            done[entry["key"]] = (entry, answered)
+
+    results = [done[k][0] for k in cats]
+    answered_n = sum(1 for k in cats if done[k][1])
+
+    if answered_n == 0:
         first_error = next((r["error"] for r in results if r.get("error")),
                            "no category answered")
         return {"available": False, "results": results, "error": first_error}

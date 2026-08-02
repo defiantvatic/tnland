@@ -192,6 +192,37 @@ function kv(k,v){ return `<div class="kv"><span>${k}</span><span>${v}</span></di
 
 function newJob(){ return 'j' + Math.random().toString(36).slice(2); }
 
+// On-demand drive times for the currently selected parcel: narrate progress
+// inside the Drive times card, then merge results + flags and re-render.
+async function runDriveTimes(){
+  if (!selected || !lastParcelCoords) return;
+  const card = document.getElementById('dt-card');
+  if (!card) return;
+  const job = newJob();
+  const stopProgress = startProgress(job, card);
+  let r;
+  try {
+    r = await (await fetch(`/api/parcel?lon=${lastParcelCoords.lon}` +
+      `&lat=${lastParcelCoords.lat}&layers=drivetimes&job=${job}`)).json();
+  } catch(e){
+    card.innerHTML = `<p class="err">Drive-time check failed: ${esc(e.message)}</p>`;
+    return;
+  } finally { stopProgress(); }
+  if (!r.found || !r.drivetimes){
+    card.innerHTML = `<p class="err">${esc(r.message||'Drive-time check returned nothing.')}</p>`;
+    return;
+  }
+  selected.drivetimes = r.drivetimes;
+  // The drivetimes-only report computes flags from parcel + drive times;
+  // graft the new ones onto the existing list, dropping duplicates.
+  const have = new Set((selected.flags||[]).map(f=>f.text));
+  const order = {bad:0, warn:1, info:2, ok:3};
+  selected.flags = (selected.flags||[]).concat(
+    (r.flags||[]).filter(f=>!have.has(f.text)));
+  selected.flags.sort((a,b)=>(order[a.level]??4)-(order[b.level]??4));
+  renderParcel(selected);
+}
+
 // Poll /api/progress while a report is in flight and narrate each source's
 // status in place of the spinner. Returns a stop function.
 function startProgress(job, out){
@@ -261,6 +292,8 @@ function renderParcel(r){
   if (r.flags && r.flags.length){
     h += '<h2>At a glance</h2><div class="card">';
     for (const f of r.flags) h += `<div class="flag"><div class="dot ${f.level}"></div><div>${esc(f.text)}</div></div>`;
+    // The verdict must not read as complete while the slow layer is unrun.
+    if (!r.drivetimes) h += `<div class="flag"><div class="dot info"></div><div>Drive times not checked yet &mdash; button below.</div></div>`;
     h += '</div>';
   }
 
@@ -320,21 +353,30 @@ function renderParcel(r){
     return s;
   });
 
-  h += section('Drive times', r.drivetimes, d=>{
-    let out = '';
-    for (const c of (d.results||[])){
-      if (c.found){
-        const target = c.threshold_min ? `target ${c.threshold_min} min` : 'info only';
-        const mark = c.over===true ? ' <span style="color:#e2694f">&#9888;</span>' : '';
-        out += kv(esc(c.label)+' <span class="sub">'+target+'</span>',
-                  `${c.minutes} min <span class="sub">(${c.miles} mi &middot; ${esc(c.name)})</span>${mark}`);
-      } else {
-        out += kv(esc(c.label),
-                  `<span class="sub">${esc(c.error ? 'unavailable' : (c.note||'none found'))}</span>`);
+  if (r.drivetimes){
+    h += section('Drive times', r.drivetimes, d=>{
+      let out = '';
+      for (const c of (d.results||[])){
+        if (c.found){
+          const target = c.threshold_min ? `target ${c.threshold_min} min` : 'info only';
+          const mark = c.over===true ? ' <span style="color:#e2694f">&#9888;</span>' : '';
+          out += kv(esc(c.label)+' <span class="sub">'+target+'</span>',
+                    `${c.minutes} min <span class="sub">(${c.miles} mi &middot; ${esc(c.name)})</span>${mark}`);
+        } else {
+          out += kv(esc(c.label),
+                    `<span class="sub">${esc(c.error ? 'unavailable' : (c.note||'none found'))}</span>`);
+        }
       }
-    }
-    return out;
-  });
+      return out;
+    });
+  } else {
+    // Fast report: drive times run on demand, once a parcel is interesting.
+    h += `<h2>Drive times</h2><div class="card" id="dt-card">
+      <p class="muted" style="margin:0 0 4px">Not checked yet &mdash; the first
+      check in a new area can take a while; nearby parcels reuse it.</p>
+      <button class="ghost" onclick="runDriveTimes()">Check drive times</button>
+    </div>`;
+  }
 
   h += section('Soils', r.soils, s=>{
     const sum = s.summary||{};

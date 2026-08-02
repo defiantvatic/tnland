@@ -1077,6 +1077,30 @@ check("empty input does not crash", geocode.split_address("") == ("", ""))
 check("blank address is not treated as unnumbered",
       geocode.is_unnumbered("") is False)
 
+# Numbered routes: listings say "State Highway 96", TIGER says "State Rte
+# 96" with BASENAME "96". The WHERE clause must bridge the conventions --
+# regression seen live: zero road matches, so zero parcel dots on the map.
+from tnland.roadsearch import _road_where
+
+_w = _road_where("State Highway 96")
+check("route search matches TIGER's BASENAME number",
+      "UPPER(BASENAME) = '96'" in _w, _w)
+check("route search matches TIGER's Rte spelling",
+      "LIKE '%RTE 96%'" in _w and "LIKE '%HWY 96%'" in _w)
+check("route search keeps the literal match too",
+      "LIKE '%STATE HIGHWAY 96%'" in _w)
+check("lettered routes keep their suffix",
+      "UPPER(BASENAME) = '70S'" in _road_where("Hwy 70S"))
+check("TN-96 style matches too",
+      "UPPER(BASENAME) = '96'" in _road_where("TN-96"))
+check("plain road names get no route clauses",
+      "BASENAME) = " not in _road_where("McBroom Branch"))
+check("route split keeps the number in the street",
+      geocode.split_address("0 State Highway 96, Buffalo Valley, TN 38548")[0]
+      .endswith("96"))
+check("apostrophes stay escaped in route names",
+      "''" in _road_where("O'Brien Highway 5"))
+
 from tnland import roadsearch
 
 # Road results must sort raw land first, then by descending acreage.

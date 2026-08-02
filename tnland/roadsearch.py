@@ -15,6 +15,7 @@ on this road is for sale?" -- and it is answerable.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from shapely.ops import unary_union
@@ -28,6 +29,32 @@ CORRIDOR_M = 90.0
 # How far from the town centre to look for the road.
 DEFAULT_SEARCH_MILES = 12.0
 
+# Numbered-route designations as listing sites write them. TIGER writes the
+# same roads as "State Rte 96" / "US Hwy 70" with BASENAME "96" / "70", so a
+# literal LIKE on the listing text matches nothing -- verified live with
+# "0 State Highway 96, Buffalo Valley": TIGER holds only "State Rte 96".
+_ROUTE_RX = re.compile(
+    r"\b(?:STATE\s+)?(?:HIGHWAY|HWY|ROUTE|RTE|RT|SR|S\.R\.|TN|US|U\.S\.)"
+    r"[\s.-]*(\d+[A-Z]?)\b",
+    re.IGNORECASE,
+)
+
+
+def _road_where(street: str) -> str:
+    """WHERE clause matching a street name across naming conventions."""
+    safe = street.upper().replace("'", "''")
+    clauses = [f"UPPER(NAME) LIKE '%{safe}%'",
+               f"UPPER(BASENAME) LIKE '%{safe}%'"]
+    m = _ROUTE_RX.search(street)
+    if m:
+        num = m.group(1).upper().replace("'", "''")
+        clauses += [
+            f"UPPER(BASENAME) = '{num}'",       # "State Rte 96" -> "96"
+            f"UPPER(NAME) LIKE '%RTE {num}%'",
+            f"UPPER(NAME) LIKE '%HWY {num}%'",
+        ]
+    return " OR ".join(clauses)
+
 
 def find_road(street: str, anchor: dict[str, Any],
               search_miles: float = DEFAULT_SEARCH_MILES) -> dict[str, Any]:
@@ -39,8 +66,7 @@ def find_road(street: str, anchor: dict[str, Any],
                         search_miles * 1609.34)
     esri = geo.shapely_to_esri(geo.simplify_for_query(area, 100))
 
-    safe = street.upper().replace("'", "''")
-    where = (f"UPPER(NAME) LIKE '%{safe}%' OR UPPER(BASENAME) LIKE '%{safe}%'")
+    where = _road_where(street)
 
     pieces, names, errors = [], set(), []
     for layer_id in config.TIGER_ROAD_LAYERS:

@@ -30,6 +30,9 @@ LABELS = {
     "drivetimes": "Drive times",
     "soilanalysis": "Soil analysis",
     "elevation": "Elevation",
+    # Terminal closure line: every lookup ends with a "report" event so
+    # silence after a failure cannot be mistaken for a hang.
+    "report": "Report",
 }
 
 _TTL_S = 300.0

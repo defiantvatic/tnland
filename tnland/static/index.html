@@ -285,7 +285,14 @@ async function loadParcel(lon, lat){
   try { r = await (await fetch(`/api/parcel?lon=${lon}&lat=${lat}&job=${job}`)).json(); }
   catch(e){ out.innerHTML = `<p class="err">Request failed: ${esc(e.message)}</p>`; return; }
   finally { stopProgress(); }
-  if (!r.found){ out.innerHTML = `<p class="muted">${esc(r.message)}</p>`; return; }
+  if (!r.found){
+    out.innerHTML = `<div class="card">
+      <p class="err" style="margin:0 0 6px">${esc(r.message)}</p>
+      <p class="sub" style="margin:0">Search finished &mdash; nothing is still
+      running. Try clicking inside a parcel boundary, or search by owner or
+      parcel ID.</p></div>`;
+    return;
+  }
   selected = r;
   lastParcelCoords = { lon, lat };
   document.getElementById('generate-report-btn').style.display = 'block';
@@ -484,7 +491,9 @@ async function searchAddress(){
   if (r.kind === 'road' && r.found){ renderRoad(r); return; }
 
   if (!r.found){
-    let h = `<p class="muted">${esc(r.message||'Not found.')}</p>`;
+    let h = `<div class="card"><p class="err" style="margin:0 0 6px">${esc(r.message||'Not found.')}</p>
+      <p class="sub" style="margin:0">Search finished &mdash; nothing is still running.${
+      r.candidates && r.candidates.length ? ' Pick a parcel below.' : ''}</p></div>`;
     if (r.candidates && r.candidates.length){
       h += '<table><thead><tr><th>Address</th><th>Owner</th></tr></thead><tbody>'
         + r.candidates.filter(c=>c.lat&&c.lon).map(c=>

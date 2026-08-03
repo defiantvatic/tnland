@@ -1192,6 +1192,22 @@ check("rescue overwrites the 'failed' narration with the outcome",
       _row_events["parcel"]["status"] == "done"
       and "bordering" in _row_events["parcel"]["detail"],
       str(_row_events.get("parcel")))
+check("rescue closes with a report event",
+      _row_events.get("report", {}).get("status") == "done",
+      str(_row_events.get("report")))
+
+# Every lookup must END with a "report" event, so silence after a failed
+# parcel lookup cannot be mistaken for a hang -- reported from live use.
+parcels.at_point = lambda lon, lat: None
+_nf = analysis.parcel_report(-85.0, 36.0, job="jobNF")
+parcels.at_point = _orig_at_point
+_nf_events = {s["source"]: s
+              for s in _progress_row.snapshot("jobNF")["sources"]}
+check("no-parcel click still narrates a finished report",
+      not _nf.get("found")
+      and _nf_events.get("report", {}).get("status") == "done"
+      and "finished" in _nf_events["report"]["detail"],
+      str(_nf_events.get("report")))
 
 # Paged queries that 5xx under load fall back to one unpaged page instead
 # of failing outright -- and the layer is NOT remembered as

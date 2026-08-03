@@ -16,10 +16,14 @@ def parcel_report(lon: float, lat: float,
                   job: str | None = None) -> dict[str, Any]:
     include = include or {"flood", "wetlands", "slope", "roads", "soils",
                           "drivetimes"}
+    t0 = time.time()
     progress.update(job, "parcel", "running")
     record = parcels.at_point(lon, lat)
     if record is None:
         progress.update(job, "parcel", "failed", "no parcel at that point")
+        progress.update(job, "report", "done",
+                        "finished -- nothing to report here; the panel "
+                        "explains why")
         return {
             "found": False,
             "message": (
@@ -87,6 +91,7 @@ def parcel_report(lon: float, lat: float,
     report["centroid"] = [geom.centroid.x, geom.centroid.y]
     report["flags"] = _flags(report)
     report["disclaimer"] = DISCLAIMER
+    progress.update(job, "report", "done", f"assembled in {time.time() - t0:.1f}s")
     return report
 
 
@@ -113,6 +118,9 @@ def address_report(address: str,
             result["kind"] = "road"
             result["query"] = address
             if result.get("found"):
+                progress.update(job, "report", "done",
+                                f"{result.get('count', 0)} parcels on the "
+                                "road -- listed in the panel")
                 return result
             fallback = geocode.search_address_field(address)
             if fallback:
@@ -126,6 +134,8 @@ def address_report(address: str,
                 result["message"] += (
                     " Falling back to parcels whose assessor address mentions "
                     "that road.")
+            progress.update(job, "report", "done",
+                            "road search finished -- see the panel")
             return result
 
     matches = geocode.geocode(address)
@@ -150,6 +160,9 @@ def address_report(address: str,
             report["geocoder"] = "Assessor address field"
             return report
     if hits:
+        progress.update(job, "report", "done",
+                        f"finished -- {len(hits)} similar addresses to pick "
+                        "from in the panel")
         return {
             "found": False,
             "candidates": [
@@ -179,6 +192,8 @@ def address_report(address: str,
             progress.update(job, "parcel", "done",
                             f"road right-of-way; offering {len(nearby)} "
                             "bordering parcels")
+            progress.update(job, "report", "done",
+                            "finished -- pick a bordering parcel in the panel")
             return {
                 "found": False,
                 "kind": "right_of_way",
@@ -203,6 +218,9 @@ def address_report(address: str,
                     "one that matches."
                 ),
             }
+        progress.update(job, "report", "done",
+                        "finished -- geocoded, but no parcel there; the "
+                        "panel explains")
         return {
             "found": False,
             "candidates": matches,
@@ -212,6 +230,8 @@ def address_report(address: str,
                 "county, which publish no parcel data."
             ),
         }
+    progress.update(job, "report", "done",
+                    "finished -- address not found; see the panel")
     return {
         "found": False,
         "message": (

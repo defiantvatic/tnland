@@ -164,6 +164,40 @@ def address_report(address: str,
         }
 
     if matches:
+        # A numbered address that geocodes but hits no parcel usually landed
+        # in the road right-of-way (Census interpolates along the
+        # centreline). Offer the bordering parcels rather than guessing --
+        # the listing's acreage makes the right one obvious.
+        m = matches[0]
+        try:
+            nearby = parcels.near_point(m["lon"], m["lat"])
+        except Exception:  # noqa: BLE001 -- rescue is best-effort
+            nearby = []
+        if nearby:
+            return {
+                "found": False,
+                "kind": "right_of_way",
+                "candidates": [
+                    {"address": " -- ".join(filter(None, [
+                        h.get("situs_address") or "(no address on file)",
+                        f"{h['deeded_acres']:g} ac" if h.get("deeded_acres")
+                        else None,
+                        f"{h.get('distance_ft', 0):,} ft away"])),
+                     "county": h.get("county"), "owner": h.get("owner"),
+                     "parcel_id": h.get("parcel_id"),
+                     "acres": h.get("deeded_acres"),
+                     "lon": h["geometry"].centroid.x,
+                     "lat": h["geometry"].centroid.y}
+                    for h in nearby
+                ],
+                "message": (
+                    f"{m['address']} geocodes onto the road itself -- a "
+                    "right-of-way strip no parcel covers. These are the "
+                    "parcels bordering that spot, nearest first. The "
+                    "listing's acreage is usually the giveaway; click the "
+                    "one that matches."
+                ),
+            }
         return {
             "found": False,
             "candidates": matches,

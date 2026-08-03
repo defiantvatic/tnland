@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 python -m tnland doctor            # verify every live data source
 python -m tnland                   # run the app, opens 127.0.0.1:8823
-python selftest.py                 # 283 offline checks
+python selftest.py                 # 289 offline checks
 
 # CLI
 python -m tnland address "2926 Bryant Ridge Rd, Baxter, TN 38544"
@@ -67,12 +67,16 @@ behind IIS caps query strings at 2048 bytes and answers HTTP 404.15; behind
 nginx it answers 414. Both look like a broken layer. `http.arcgis_query`
 already POSTs — keep it that way.
 
-**Never page manually.** Use `http.arcgis_query_all`. It handles three real
+**Never page manually.** Use `http.arcgis_query_all`. It handles four real
 server behaviours: a `maxRecordCount` below your page size (short page plus
 `exceededTransferLimit` — must keep going), a server that ignores
-`resultOffset` (must dedupe and stop, not loop), and a server that rejects
+`resultOffset` (must dedupe and stop, not loop), a server that rejects
 `resultOffset` outright with "Pagination is not supported" (must retry
-unpaged). Hamilton County exhibits the third.
+unpaged — Hamilton County), and a server that 5xxes ONLY when
+`resultOffset` is present (the offset forces an ordered scan; under load
+the Esri-hosted statewide layer answers the identical query unpaged —
+must fall back to one unpaged page without marking the layer
+pagination-hostile, because it is transient).
 
 **Never cache an error.** ArcGIS returns errors with HTTP 200 and an
 `{"error": {...}}` body. `http._cacheable` rejects those. A cached error
@@ -167,6 +171,13 @@ whichever neighbour happens to sit under it, which is worse than failing.
 digit) and `roadsearch.parcels_on_road` answers the real question instead:
 find the road in TIGER, buffer it into a corridor, and return every parcel
 fronting it with the raw land sorted first.
+
+Numbered addresses have the opposite failure: the Census geocoder
+interpolates them onto the road centreline, and the right-of-way strip
+belongs to no parcel (seen live: '9515 Highway 147, Stewart' landed 2 m
+from the listing-side boundary). `parcels.near_point` rescues these by
+offering the bordering parcels as candidates -- acreage and distance in
+the label -- rather than silently snapping to a possibly-wrong neighbour.
 
 Slope is computed locally rather than via the server's `Slope Degrees` raster
 function, because a server-side render has edge artifacts at the request

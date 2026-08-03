@@ -269,6 +269,34 @@ def _acres_where(min_acres: float | None, field: str) -> str | None:
     return f"{field} >= {float(min_acres)}"
 
 
+def near_point(lon: float, lat: float, radius_m: float = 150.0,
+               limit: int = 12) -> list[dict[str, Any]]:
+    """Parcels within radius_m of a point, nearest first, with distance_ft.
+
+    Exists for numbered addresses that geocode into the road right-of-way:
+    the Census geocoder interpolates along the street centreline, and the
+    centreline strip belongs to no parcel -- seen live with '9515 Highway
+    147, Stewart', whose point landed 2 m from the listing-side boundary.
+    Never used for unnumbered '0 Road Name' listings, which must not snap.
+    """
+    from shapely.geometry import Point
+
+    pt = Point(lon, lat)
+    found = in_area(geo.buffer_m(pt, radius_m), max_records=50)
+    apply_bulk_landuse(found)
+    pt_utm, epsg = geo.to_utm(pt)
+    rows = []
+    for rec in found:
+        g = rec.get("geometry")
+        if g is None:
+            continue
+        g_utm = geo.reproject(g, geo.WGS84, epsg)
+        rec["distance_ft"] = round(g_utm.distance(pt_utm) * 3.28084)
+        rows.append(rec)
+    rows.sort(key=lambda r: r["distance_ft"])
+    return rows[:limit]
+
+
 def in_area(geom_wgs84, max_records: int = 5000,
             min_acres: float | None = None) -> list[dict[str, Any]]:
     """All parcels intersecting a drawn polygon. Used for list building.

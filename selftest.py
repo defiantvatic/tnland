@@ -1132,6 +1132,82 @@ check("CLI address accepts --min-acres",
           ._subparsers._group_actions[0].choices["address"]._actions
           for a in action.option_strings))
 
+# --- right-of-way rescue -------------------------------------------------
+# A numbered address geocodes onto the road centreline (Census interpolates
+# along it), which no parcel covers -- seen live with '9515 Highway 147,
+# Stewart': the point was 2 m from the listing-side boundary. The rescue
+# offers bordering parcels as candidates; it must never silently snap.
+from shapely.geometry import box as _rbox
+
+_orig_in_area = parcels.in_area
+_orig_bulk = parcels.apply_bulk_landuse
+parcels.in_area = lambda geom, max_records=50, min_acres=None: [
+    {"geometry": _rbox(-85.6005, 35.9995, -85.5995, 36.0005),
+     "owner": "NEAR", "deeded_acres": 5.0},
+    {"geometry": _rbox(-85.598, 35.999, -85.597, 36.001),
+     "owner": "FAR", "deeded_acres": 100.0},
+    {"geometry": None, "owner": "NOGEOM"},
+]
+parcels.apply_bulk_landuse = lambda recs: None
+_rows = parcels.near_point(-85.600, 36.000)
+parcels.in_area = _orig_in_area
+parcels.apply_bulk_landuse = _orig_bulk
+check("near_point sorts nearest first and drops geometry-less records",
+      [r["owner"] for r in _rows] == ["NEAR", "FAR"])
+check("near_point measures distance in feet",
+      _rows[0]["distance_ft"] == 0 and _rows[1]["distance_ft"] > 300,
+      str([r["distance_ft"] for r in _rows]))
+
+_orig_geocode = geocode.geocode
+_orig_field = geocode.search_address_field
+_orig_at_point = parcels.at_point
+_orig_near = parcels.near_point
+geocode.geocode = lambda q: [{"lon": -85.6, "lat": 36.0,
+                              "address": "9515 TEST HWY", "source": "test"}]
+geocode.search_address_field = lambda q: []
+parcels.at_point = lambda lon, lat: None
+parcels.near_point = lambda lon, lat, radius_m=150.0, limit=12: [
+    {"geometry": _rbox(-85.6005, 35.9995, -85.5995, 36.0005),
+     "situs_address": None, "county": "Test", "owner": "NEAR",
+     "parcel_id": "001", "deeded_acres": 107.0, "distance_ft": 8}]
+_row_report = analysis.address_report("9515 Test Hwy, Testville, TN")
+geocode.geocode = _orig_geocode
+geocode.search_address_field = _orig_field
+parcels.at_point = _orig_at_point
+parcels.near_point = _orig_near
+check("right-of-way rescue offers bordering parcels",
+      _row_report.get("kind") == "right_of_way"
+      and len(_row_report["candidates"]) == 1
+      and "right-of-way" in _row_report["message"])
+check("rescue candidates carry acreage and distance in the label",
+      "107 ac" in _row_report["candidates"][0]["address"]
+      and "ft away" in _row_report["candidates"][0]["address"],
+      _row_report["candidates"][0]["address"])
+
+# Paged queries that 5xx under load fall back to one unpaged page instead
+# of failing outright -- and the layer is NOT remembered as
+# pagination-hostile, because the failure is transient.
+import httpx as _httpx
+
+from tnland import http as _http
+
+
+def _flaky_query(layer_url, **kw):
+    if kw.get("result_offset") is not None:
+        req = _httpx.Request("POST", layer_url)
+        raise _httpx.HTTPStatusError(
+            "504", request=req, response=_httpx.Response(504, request=req))
+    return {"features": [{"attributes": {"OBJECTID": i}} for i in range(3)]}
+
+
+_orig_arcq = _http.arcgis_query
+_http.arcgis_query = _flaky_query
+_paged = _http.arcgis_query_all("https://fake.example/layer", max_records=10)
+_http.arcgis_query = _orig_arcq
+check("paged 5xx falls back to one unpaged page", len(_paged) == 3)
+check("transient 5xx does not mark the layer pagination-hostile",
+      "https://fake.example/layer" not in _http._NO_PAGINATION)
+
 from tnland import roadsearch
 
 # Road results must sort raw land first, then by descending acreage.

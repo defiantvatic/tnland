@@ -352,6 +352,24 @@ def arcgis_query_all(
                 _NO_PAGINATION.add(layer_url)
                 continue
             raise
+        except httpx.HTTPStatusError as exc:
+            # Fourth real behaviour: under load, the Esri-hosted statewide
+            # layer answers a plain query instantly but 504s the IDENTICAL
+            # query with resultOffset (the offset forces an ordered scan).
+            # Seen live 2026-08-03. Degrade to one unpaged page rather than
+            # failing the whole request; transient, so the layer is NOT
+            # remembered as pagination-hostile.
+            if offset == 0 and exc.response.status_code >= 500:
+                data = arcgis_query(layer_url, **kwargs)
+                features.extend(data.get("features", []))
+                if len(features) >= 1000:
+                    log.warning(
+                        "%s paged query failed (HTTP %s); fell back to one "
+                        "unpaged page -- results may be capped.",
+                        layer_url, exc.response.status_code,
+                    )
+                return features[:max_records]
+            raise
         oid_field = oid_field or data.get("objectIdFieldName")
         batch = data.get("features", [])
         if not batch:

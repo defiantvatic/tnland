@@ -1184,7 +1184,10 @@ check("rescue candidates carry acreage and distance in the label",
       "107 ac" in _row_report["candidates"][0]["address"]
       and "ft away" in _row_report["candidates"][0]["address"],
       _row_report["candidates"][0]["address"])
-_row_events = {s["source"]: s for s in progress.snapshot("jobROW")["sources"]}
+from tnland import progress as _progress_row
+
+_row_events = {s["source"]: s
+               for s in _progress_row.snapshot("jobROW")["sources"]}
 check("rescue overwrites the 'failed' narration with the outcome",
       _row_events["parcel"]["status"] == "done"
       and "bordering" in _row_events["parcel"]["detail"],

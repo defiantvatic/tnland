@@ -174,6 +174,11 @@ def address_report(address: str,
         except Exception:  # noqa: BLE001 -- rescue is best-effort
             nearby = []
         if nearby:
+            # Overwrite the "failed" the inner lookup just narrated -- the
+            # rescue succeeded, and the terminal should say so.
+            progress.update(job, "parcel", "done",
+                            f"road right-of-way; offering {len(nearby)} "
+                            "bordering parcels")
             return {
                 "found": False,
                 "kind": "right_of_way",

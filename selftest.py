@@ -1170,7 +1170,8 @@ parcels.near_point = lambda lon, lat, radius_m=150.0, limit=12: [
     {"geometry": _rbox(-85.6005, 35.9995, -85.5995, 36.0005),
      "situs_address": None, "county": "Test", "owner": "NEAR",
      "parcel_id": "001", "deeded_acres": 107.0, "distance_ft": 8}]
-_row_report = analysis.address_report("9515 Test Hwy, Testville, TN")
+_row_report = analysis.address_report("9515 Test Hwy, Testville, TN",
+                                      job="jobROW")
 geocode.geocode = _orig_geocode
 geocode.search_address_field = _orig_field
 parcels.at_point = _orig_at_point
@@ -1183,6 +1184,11 @@ check("rescue candidates carry acreage and distance in the label",
       "107 ac" in _row_report["candidates"][0]["address"]
       and "ft away" in _row_report["candidates"][0]["address"],
       _row_report["candidates"][0]["address"])
+_row_events = {s["source"]: s for s in progress.snapshot("jobROW")["sources"]}
+check("rescue overwrites the 'failed' narration with the outcome",
+      _row_events["parcel"]["status"] == "done"
+      and "bordering" in _row_events["parcel"]["detail"],
+      str(_row_events.get("parcel")))
 
 # Paged queries that 5xx under load fall back to one unpaged page instead
 # of failing outright -- and the layer is NOT remembered as

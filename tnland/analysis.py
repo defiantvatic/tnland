@@ -7,7 +7,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from . import config, geo, progress
-from .sources import drivetimes, geocode, hazards, parcels, roads, soils, terrain
+from .sources import (drivetimes, geocode, hazards, parcels, roads,
+                      soilanalysis, soils, terrain)
 
 
 def parcel_report(lon: float, lat: float,
@@ -62,6 +63,8 @@ def parcel_report(lon: float, lat: float,
             submit("drivetimes", drivetimes.drive_times,
                    geom.centroid.x, geom.centroid.y,
                    lambda msg: progress.update(job, "drivetimes", "running", msg))
+        if "soilanalysis" in include:
+            submit("soilanalysis", soilanalysis.septic, geom)
         submit("elevation", terrain.point_elevation,
                geom.centroid.x, geom.centroid.y)
 
@@ -288,6 +291,26 @@ def _flags(report: dict[str, Any]) -> list[dict[str, str]]:
     if soil.get("available") and soil.get("summary", {}).get("has_hydric_soil"):
         flags.append({"level": "warn", "text":
                       "Hydric soils present -- a wetland indicator."})
+
+    sa = report.get("soilanalysis", {})
+    if sa.get("available"):
+        s = sa.get("summary", {})
+        ok_ac = s.get("workable_acres", 0)
+        best = s.get("best")
+        if ok_ac >= 2 and best:
+            flags.append({"level": "ok", "text":
+                          f"Septic: ~{ok_ac:.0f} ac rate no worse than "
+                          f"'somewhat limited' -- best area is the "
+                          f"{best['name'].split(',')[0]} ({best['position']})."})
+        elif ok_ac > 0:
+            flags.append({"level": "warn", "text":
+                          f"Septic siting is tight: only ~{ok_ac:.1f} ac rate "
+                          "better than 'very limited'. Perc test early."})
+        else:
+            flags.append({"level": "warn", "text":
+                          "Every mapped soil rates 'very limited' for septic "
+                          "-- budget for an engineered system and perc test "
+                          "before anything else."})
 
     dt = report.get("drivetimes", {})
     if dt.get("available"):

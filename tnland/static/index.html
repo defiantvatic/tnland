@@ -247,6 +247,34 @@ function startProgress(job, out){
   return ()=>clearInterval(t);
 }
 
+// On-demand soil/septic analysis, same shape as runDriveTimes.
+async function runSoilAnalysis(){
+  if (!selected || !lastParcelCoords) return;
+  const card = document.getElementById('sa-card');
+  if (!card) return;
+  const job = newJob();
+  const stopProgress = startProgress(job, card);
+  let r;
+  try {
+    r = await (await fetch(`/api/parcel?lon=${lastParcelCoords.lon}` +
+      `&lat=${lastParcelCoords.lat}&layers=soilanalysis&job=${job}`)).json();
+  } catch(e){
+    card.innerHTML = `<p class="err">Soil analysis failed: ${esc(e.message)}</p>`;
+    return;
+  } finally { stopProgress(); }
+  if (!r.found || !r.soilanalysis){
+    card.innerHTML = `<p class="err">${esc(r.message||'Soil analysis returned nothing.')}</p>`;
+    return;
+  }
+  selected.soilanalysis = r.soilanalysis;
+  const have = new Set((selected.flags||[]).map(f=>f.text));
+  const order = {bad:0, warn:1, info:2, ok:3};
+  selected.flags = (selected.flags||[]).concat(
+    (r.flags||[]).filter(f=>!have.has(f.text)));
+  selected.flags.sort((a,b)=>(order[a.level]??4)-(order[b.level]??4));
+  renderParcel(selected);
+}
+
 async function loadParcel(lon, lat){
   const out = document.getElementById('parcel-out');
   showPane('parcel');
@@ -391,6 +419,38 @@ function renderParcel(r){
          esc(u.drainage||'--'))).join('') + '</div>';
     return out;
   });
+
+  if (r.soilanalysis){
+    h += section('Soil analysis &mdash; septic', r.soilanalysis, a=>{
+      const s = a.summary||{};
+      let out = kv('Septic-workable', `${s.workable_acres} of ${a.total_acres} ac`);
+      if (s.best) out += kv('Best area',
+        `${esc(s.best.name.split(',')[0])} <span class="sub">(${esc(s.best.position)}, ${s.best.acres} ac)</span>`);
+      out += '<div style="margin-top:7px">';
+      for (const u of (a.units||[])){
+        const cls = u.septic_rating === 'Very limited' ? 'bad'
+                  : (u.septic_rating ? 'ok' : '');
+        out += kv(`${esc(u.symbol||'')} <span class="sub">${esc(u.name)}</span>`,
+                  `${u.acres} ac (${u.pct}%)`);
+        out += `<div class="sub" style="margin:-1px 0 6px">${esc(u.position)}
+          &middot; <span class="${cls}">${esc(u.septic_rating||'not rated')}</span>`
+          + (u.septic_reasons && u.septic_reasons.length
+             ? ` &mdash; ${esc(u.septic_reasons.slice(0,3).join(', '))}` : '')
+          + (u.capability ? ` &middot; class ${esc(u.capability)}` : '')
+          + (u.prime_farmland ? ' &middot; prime farmland' : '')
+          + '</div>';
+      }
+      return out + '</div>';
+    });
+  } else {
+    // Deep analysis is on demand, like drive times: three USDA queries a
+    // parcel should earn before we spend them.
+    h += `<h2>Soil analysis &mdash; septic</h2><div class="card" id="sa-card">
+      <p class="muted" style="margin:0 0 4px">Acres per soil type, where each
+      sits, and NRCS septic ratings with the limiting reasons.</p>
+      <button class="ghost" onclick="runSoilAnalysis()">Analyze soils / septic</button>
+    </div>`;
+  }
 
   h += `<div class="note">${esc(r.disclaimer)}</div>`;
   if (p.notes && p.notes.length) h += p.notes.map(n=>`<div class="note">${esc(n)}</div>`).join('');

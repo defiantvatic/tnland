@@ -38,12 +38,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_parcel.add_argument("--json", action="store_true")
     p_parcel.add_argument("--drivetimes", action="store_true",
                           help="include drive times (slower on a cold cache)")
+    p_parcel.add_argument("--septic", action="store_true",
+                          help="include the deep soil / septic analysis")
 
     p_addr = sub.add_parser("address", help="Report for a street address")
     p_addr.add_argument("query", help='e.g. "2926 Bryant Ridge Rd, Baxter, TN"')
     p_addr.add_argument("--json", action="store_true")
     p_addr.add_argument("--drivetimes", action="store_true",
                         help="include drive times (slower on a cold cache)")
+    p_addr.add_argument("--septic", action="store_true",
+                        help="include the deep soil / septic analysis")
     p_addr.add_argument("--min-acres", type=float, default=None,
                         help='road searches ("0 Road Name") only list '
                              'parcels of at least this deeded acreage')
@@ -132,6 +136,8 @@ def _cli_layers(args) -> set[str]:
     layers = {"flood", "wetlands", "slope", "roads", "soils"}
     if getattr(args, "drivetimes", False):
         layers.add("drivetimes")
+    if getattr(args, "septic", False):
+        layers.add("soilanalysis")
     return layers
 
 
@@ -177,6 +183,19 @@ def _print_report(report: dict) -> None:
         mark = {"bad": "!!", "warn": " !", "ok": " +", "info": " ."}.get(
             flag["level"], "  ")
         print(f" {mark} {flag['text']}")
+    sa = report.get("soilanalysis", {})
+    if sa.get("available"):
+        s = sa.get("summary", {})
+        print(f"\nSoil analysis ({sa['total_acres']} ac mapped; "
+              f"{s.get('workable_acres', 0)} ac septic-workable):")
+        for u in sa.get("units", []):
+            rating = u.get("septic_rating") or "not rated"
+            why = ", ".join(u.get("septic_reasons", [])[:3])
+            print(f"  {u['acres']:>7.2f} ac  {u['pct']:>5.1f}%  {u['position']:<8}"
+                  f" {rating:<17} {u.get('capability') or '--':<5}"
+                  f" {u['name'][:44]}")
+            if why:
+                print(f"{'':>32}({why})")
     dt = report.get("drivetimes", {})
     if not dt:
         print("\nDrive times: not checked (pass --drivetimes to include them)")

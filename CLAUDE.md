@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 python -m tnland doctor            # verify every live data source
 python -m tnland                   # run the app, opens 127.0.0.1:8823
-python selftest.py                 # 267 offline checks
+python selftest.py                 # 283 offline checks
 
 # CLI
 python -m tnland address "2926 Bryant Ridge Rd, Baxter, TN 38544"
@@ -136,11 +136,20 @@ and per-category Valhalla time matrices run concurrently to pick the
 truly nearest by road; thresholds live in `config.DRIVETIME_CATEGORIES`,
 informational categories use `threshold_min: None` and never flag).
 
-Drive times are the slow layer, so they are ON DEMAND: map clicks,
+`soilanalysis.py` (the soil-surveyor layer: real SSURGO polygon
+intersection gives acres of each soil ON the parcel with a compass
+position, plus NRCS's own "Septic Tank Absorption Fields" rating per
+soil with the named limiting features, capability class and prime
+farmland; three Soil Data Access queries, cached; a complex map unit
+speaks with its dominant RATED component so rock outcrop cannot mute
+the rating).
+
+Drive times and soil analysis are the slow layers, so they are ON DEMAND: map clicks,
 address search and the CLI default to the fast layers, with a
-"Check drive times" button on the panel (and `--drivetimes` on the CLI)
+"Check drive times" / "Analyze soils" buttons on the panel
+(`--drivetimes` / `--septic` on the CLI)
 to run them for a parcel worth the wait. `/api/report` -- the printable
-report -- always includes them: generating a report is the "I'm serious
+report -- always includes both: generating a report is the "I'm serious
 about this parcel" signal. Tests pin these defaults.
 
 Address lookup geocodes to a point and asks which parcel contains it, rather
@@ -306,7 +315,8 @@ tnland/
   server.py       FastAPI routes
   doctor.py       live health check
   progress.py     live per-source status for the polling frontend
-  sources/        parcels, hazards, terrain, roads, soils, drivetimes
+  sources/        parcels, hazards, terrain, roads, soils, drivetimes,
+                  soilanalysis
   static/index.html   the entire frontend
 ```
 

@@ -28,6 +28,7 @@ LABELS = {
     "access": "Road access",
     "soils": "Soils (SSURGO)",
     "drivetimes": "Drive times",
+    "soilanalysis": "Soil analysis",
     "elevation": "Elevation",
 }
 

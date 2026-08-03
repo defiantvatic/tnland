@@ -59,7 +59,7 @@ def parcel(lon: float, lat: float,
 
 @app.get("/api/report")
 def report(lon: float, lat: float,
-           layers: str = "flood,wetlands,slope,roads,soils,drivetimes",
+           layers: str = "flood,wetlands,slope,roads,soils,drivetimes,soilanalysis",
            job: str | None = None):
     """Generate data for a detailed printable parcel report."""
     include = {x.strip() for x in layers.split(",") if x.strip()}

@@ -22,7 +22,8 @@ from shapely.geometry import Point
 
 from . import config, geo
 from .http import SourceError, arcgis_query, probe
-from .sources import drivetimes, hazards, parcels, roads, soils, terrain
+from .sources import (drivetimes, hazards, parcels, roads, soilanalysis,
+                      soils, terrain)
 
 GREEN = "\033[32m"
 RED = "\033[31m"
@@ -183,6 +184,10 @@ def run(verbose: bool = False, lon: float | None = None,
          lambda r: r.get("summary", "")[:70]),
         ("SSURGO soils", lambda: soils.soils(geom),
          lambda r: f"{len(r.get('units', []))} map unit(s)"),
+        ("Soil analysis (septic)", lambda: soilanalysis.septic(geom),
+         lambda r: f"{len(r.get('units', []))} unit(s), "
+                   f"{r.get('summary', {}).get('workable_acres', 0)} ac "
+                   "septic-workable"),
     ]
     for label, fn, describe in checks:
         result, secs, err = _timed(fn)

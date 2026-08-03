@@ -74,6 +74,7 @@ function renderFullReport(data) {
     ${renderHeader(data)}
     ${renderExecutiveSummary(data)}
     ${renderSepticSection(data)}
+    ${renderSoilAnalysisSection(data)}
     ${renderHomeSiteSection(data)}
     ${renderDriveTimesSection(data)}
     ${renderFarmingSection(data)}
@@ -190,6 +191,34 @@ function renderSepticSection(data) {
 
       <h3>Proximity to Water</h3>
       <p>Septic systems must maintain proper setback from surface water. Check site plan with surveyor.</p>
+    </div>
+  `;
+}
+
+// Helper: Soil analysis section (per-unit acreage + NRCS septic ratings)
+function renderSoilAnalysisSection(data) {
+  const sa = data.soilanalysis || {};
+  if (!sa.available) return '';
+  const s = sa.summary || {};
+  const rows = (sa.units || []).map(u => {
+    const mark = u.septic_rating === 'Very limited' ? '⚠'
+               : (u.septic_rating ? '✓' : '•');
+    const why = (u.septic_reasons || []).slice(0, 3).join(', ');
+    return `<li>${mark} <strong>${u.name}</strong> — ${u.acres} ac ` +
+      `(${u.pct}%, ${u.position}) — septic: ${u.septic_rating || 'not rated'}` +
+      (why ? ` (${why})` : '') +
+      (u.capability ? ` — capability class ${u.capability}` : '') +
+      (u.prime_farmland ? ' — prime farmland' : '') + '</li>';
+  }).join('');
+  return `
+    <div class="section soilanalysis-section">
+      <h2>Soil Analysis — Acreage & Septic by Soil Type</h2>
+      <p><strong>Septic-workable ground:</strong> ${s.workable_acres} of
+      ${sa.total_acres} mapped acres rate no worse than "somewhat limited"${
+      s.best ? ` — best area is the ${s.best.name.split(',')[0]}
+      (${s.best.position}, ${s.best.acres} ac)` : ''}.</p>
+      <ul>${rows}</ul>
+      <p class="note">${sa.note || ''}</p>
     </div>
   `;
 }

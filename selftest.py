@@ -1292,6 +1292,121 @@ check("CLI is fast by default", "drivetimes" not in _cli_layers(_A()))
 check("CLI --drivetimes opts in", "drivetimes" in _cli_layers(_B()))
 
 # ---------------------------------------------------------------------------
+print("\nSoil analysis")
+
+from shapely.geometry import box as _box
+
+from tnland.sources import soilanalysis
+
+check("capability class renders as roman numerals",
+      soilanalysis._capability("4", "e") == "IVe"
+      and soilanalysis._capability(2, None) == "II"
+      and soilanalysis._capability(None, "e") is None)
+
+_sq = _box(-85.601, 35.999, -85.599, 36.001)
+check("compass: centred body reads central",
+      soilanalysis._compass(_sq.centroid, _sq) == "central")
+check("compass: offset body reads a direction",
+      soilanalysis._compass(_box(-85.601, 35.999, -85.6005, 36.001).centroid,
+                            _sq) == "W")
+
+# Full septic() with SDA mocked: two soil bodies split the parcel; the
+# second is a complex whose dominant component is unrated rock outcrop, so
+# the unit must speak with the rated Caneyville component's voice.
+_west = _box(-85.602, 35.998, -85.600, 36.002).wkt
+_east = _box(-85.600, 35.998, -85.598, 36.002).wkt
+
+
+def _fake_sda(sql):
+    if "mupolygon" in sql:
+        return [["mukey", "wkt"], ["111", _west], ["222", _east]]
+    if "cointerp" in sql:
+        return [["mukey", "compname", "ruledepth", "interphrc"],
+                ["111", "Curtistown", "0", "Somewhat limited"],
+                ["111", "Curtistown", "1", "Slow water movement"],
+                ["222", "Rock outcrop", "0", "Not rated"],
+                ["222", "Caneyville", "0", "Very limited"],
+                ["222", "Caneyville", "1", "Depth to bedrock"],
+                ["222", "Caneyville", "1", "Slope"]]
+    return [["mukey", "musym", "muname", "farmlndcl", "compname",
+             "comppct_r", "drainagecl", "slope_r", "nirrcapcl",
+             "nirrcapscl", "hydricrating"],
+            ["111", "CuB", "Curtistown silt loam, 2 to 5 percent slopes",
+             "All areas are prime farmland", "Curtistown", "100",
+             "Well drained", "4", "2", "e", "No"],
+            ["222", "uCanF", "Caneyville-Rock outcrop complex",
+             "Not prime farmland", "Rock outcrop", "55", None, "23",
+             "8", None, "No"],
+            ["222", "uCanF", "Caneyville-Rock outcrop complex",
+             "Not prime farmland", "Caneyville", "40", "Well drained",
+             "23", "7", "s", "No"]]
+
+
+_orig_sda = soilanalysis._sda
+soilanalysis._sda = _fake_sda
+_sa = soilanalysis.septic(_sq)
+soilanalysis._sda = _orig_sda
+
+check("soil analysis available with mocked SDA", _sa["available"] is True)
+check("acreage splits between the two bodies and sums to the parcel",
+      len(_sa["units"]) == 2
+      and abs(sum(u["acres"] for u in _sa["units"]) - _sa["total_acres"]) < 0.01
+      and abs(_sa["units"][0]["pct"] - 50) < 2)
+check("bodies carry compass positions",
+      {u["position"] for u in _sa["units"]} == {"W", "E"})
+check("complex speaks with its rated component, not rock outcrop",
+      next(u for u in _sa["units"] if u["mukey"] == "222")["septic_rating"]
+      == "Very limited")
+check("limiting reasons ride along",
+      "Depth to bedrock" in next(u for u in _sa["units"]
+                                 if u["mukey"] == "222")["septic_reasons"])
+check("prime farmland decoded from the sentence",
+      next(u for u in _sa["units"] if u["mukey"] == "111")["prime_farmland"]
+      is True)
+_sum = _sa["summary"]
+check("workable summary counts the somewhat-limited body",
+      _sum["best"] and _sum["best"]["name"].startswith("Curtistown")
+      and abs(_sum["workable_acres"]
+              - next(u for u in _sa["units"] if u["mukey"] == "111")["acres"])
+      < 0.01)
+
+# SDA outage fails cleanly with the error named.
+soilanalysis._sda = lambda sql: (_ for _ in ()).throw(
+    soilanalysis.SourceError("both hosts down"))
+_sa_err = soilanalysis.septic(_sq)
+soilanalysis._sda = _orig_sda
+check("SDA outage names the error",
+      _sa_err["available"] is False and "both hosts down" in _sa_err["error"])
+
+# Flags: workable ground is a green light; none is a warning.
+_f_ok = analysis._flags({"parcel": {}, "soilanalysis": {
+    "available": True, "summary": {"workable_acres": 8.2, "best": {
+        "name": "Decatur silt loam, 5 to 12 percent slopes",
+        "acres": 8.2, "position": "NW", "rating": "Somewhat limited"}}}})
+check("workable septic ground earns a green flag",
+      any(f["level"] == "ok" and "Decatur" in f["text"] for f in _f_ok),
+      str(_f_ok))
+_f_none = analysis._flags({"parcel": {}, "soilanalysis": {
+    "available": True, "summary": {"workable_acres": 0, "best": None}}})
+check("all-very-limited warns about engineered systems",
+      any(f["level"] == "warn" and "engineered" in f["text"]
+          for f in _f_none), str(_f_none))
+
+check("printable report always includes soil analysis",
+      "soilanalysis" in _report_layers)
+check("map click does not include soil analysis by default",
+      "soilanalysis" not in _parcel_layers)
+
+
+class _C:
+    drivetimes = False
+    septic = True
+
+
+check("CLI --septic opts into soil analysis",
+      "soilanalysis" in _cli_layers(_C()))
+
+# ---------------------------------------------------------------------------
 print("\nVersion")
 
 import re as _re

@@ -269,6 +269,50 @@ def _acres_where(min_acres: float | None, field: str) -> str | None:
     return f"{field} >= {float(min_acres)}"
 
 
+# A mis-zoomed outlines request must not pull half a county from the
+# statewide service; ~0.08 deg is a comfortable neighbourhood view.
+OUTLINE_MAX_SPAN_DEG = 0.08
+
+
+def outlines(minlon: float, minlat: float, maxlon: float, maxlat: float,
+             max_records: int = 800) -> dict[str, Any]:
+    """Bare parcel boundaries for a map viewport -- the browse layer.
+
+    Deliberately light: outline, owner, id and acres only. No land-use
+    join, no analysis -- browsing many parcels must cost almost nothing,
+    with the full report reserved for the parcel that earns a click.
+    """
+    if (maxlon - minlon) > OUTLINE_MAX_SPAN_DEG \
+            or (maxlat - minlat) > OUTLINE_MAX_SPAN_DEG:
+        return {"type": "FeatureCollection", "features": [],
+                "error": "Zoom in further to load parcel lines."}
+    envelope = {"xmin": minlon, "ymin": minlat, "xmax": maxlon,
+                "ymax": maxlat, "spatialReference": {"wkid": 4326}}
+    feats = arcgis_query_all(
+        _statewide_url(), geometry=envelope,
+        geometry_type="esriGeometryEnvelope",
+        out_fields=["PARCELID", "OWNER", "DEEDAC", "COUNTY_NAME"],
+        max_records=max_records,
+    )
+    out = []
+    for f in feats:
+        shp = geo.esri_to_shapely(f.get("geometry") or {})
+        if shp is None or shp.is_empty:
+            continue
+        attrs = f.get("attributes") or {}
+        out.append({
+            "type": "Feature",
+            "geometry": geo.shapely_to_geojson(shp),
+            "properties": {
+                "parcel_id": (attrs.get("PARCELID") or "").strip(),
+                "owner": attrs.get("OWNER"),
+                "acres": attrs.get("DEEDAC"),
+                "county": attrs.get("COUNTY_NAME"),
+            },
+        })
+    return {"type": "FeatureCollection", "features": out}
+
+
 def near_point(lon: float, lat: float, radius_m: float = 150.0,
                limit: int = 12) -> list[dict[str, Any]]:
     """Parcels within radius_m of a point, nearest first, with distance_ft.

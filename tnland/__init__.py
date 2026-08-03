@@ -8,7 +8,7 @@ from pathlib import Path
 # Bump when making changes: minor for features, patch for fixes. The web
 # header, CLI banner, doctor and printable report all display build_info(),
 # so a stale number is visible immediately.
-__version__ = "1.5.3"
+__version__ = "1.6.0"
 
 
 def build_info() -> str:

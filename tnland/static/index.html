@@ -179,6 +179,37 @@ map.on('click', e=>{
   loadParcel(e.latlng.lng, e.latlng.lat);
 });
 
+// Browse layer: bare parcel outlines for the current view, so you can hunt
+// for a property (and see multi-parcel assemblies) BEFORE spending a report
+// on it. Hover shows owner + acres; clicking still runs the fast report.
+const outlineLayer = L.geoJSON(null, {
+  style: {color:'#e0b040', weight:1, opacity:.75, fillColor:'#e0b040', fillOpacity:.03},
+  onEachFeature: (f, l) => {
+    const p = f.properties || {};
+    l.bindTooltip(
+      `${esc(p.owner || '(no owner on file)')}<br>` +
+      `${p.acres ? p.acres + ' ac' : 'no acreage on file'} &middot; ${esc(p.parcel_id || '')}`,
+      {sticky: true});
+  }
+});
+layersCtl.addOverlay(outlineLayer, 'Parcel lines');
+let outlinesOn = false, outlineTimer = null;
+async function refreshOutlines(){
+  if (!outlinesOn) return;
+  if (map.getZoom() < 14){ outlineLayer.clearLayers(); return; }
+  const b = map.getBounds();
+  try {
+    const gj = await (await fetch(`/api/outlines?minlon=${b.getWest()}` +
+      `&minlat=${b.getSouth()}&maxlon=${b.getEast()}&maxlat=${b.getNorth()}`)).json();
+    if (!outlinesOn) return;
+    outlineLayer.clearLayers();
+    if (gj.features && gj.features.length) outlineLayer.addData(gj);
+  } catch(e){}
+}
+map.on('overlayadd', e=>{ if (e.layer === outlineLayer){ outlinesOn = true; refreshOutlines(); }});
+map.on('overlayremove', e=>{ if (e.layer === outlineLayer){ outlinesOn = false; outlineLayer.clearLayers(); }});
+map.on('moveend', ()=>{ clearTimeout(outlineTimer); outlineTimer = setTimeout(refreshOutlines, 350); });
+
 document.querySelectorAll('.tabs button').forEach(b=>{
   b.onclick = ()=>showPane(b.dataset.pane);
 });

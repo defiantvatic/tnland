@@ -1233,6 +1233,47 @@ check("paged 5xx falls back to one unpaged page", len(_paged) == 3)
 check("transient 5xx does not mark the layer pagination-hostile",
       "https://fake.example/layer" not in _http._NO_PAGINATION)
 
+# --- browse layer: bare parcel outlines --------------------------------
+_outline_calls = []
+
+
+def _fake_outline_query(url, **kw):
+    _outline_calls.append(kw)
+    return [{
+        "attributes": {"PARCELID": " 042 016 00409 ", "OWNER": "PITTS",
+                       "DEEDAC": 2.06, "COUNTY_NAME": "Houston"},
+        "geometry": {"rings": [[[-85.94, 35.93], [-85.94, 35.94],
+                                [-85.93, 35.94], [-85.93, 35.93],
+                                [-85.94, 35.93]]]},
+    }]
+
+
+import tnland.sources.parcels as _parcels_mod
+
+_orig_qa = _parcels_mod.arcgis_query_all
+_parcels_mod.arcgis_query_all = _fake_outline_query
+_gj = parcels.outlines(-85.94, 35.93, -85.93, 35.94)
+_parcels_mod.arcgis_query_all = _orig_qa
+check("outlines returns a GeoJSON FeatureCollection",
+      _gj["type"] == "FeatureCollection" and len(_gj["features"]) == 1)
+_props = _gj["features"][0]["properties"]
+check("outline features carry owner, acres and a trimmed parcel id",
+      _props["owner"] == "PITTS" and _props["acres"] == 2.06
+      and _props["parcel_id"] == "042 016 00409")
+check("outline queries request an envelope, not a polygon",
+      _outline_calls[0].get("geometry_type") == "esriGeometryEnvelope")
+
+_outline_calls.clear()
+_parcels_mod.arcgis_query_all = _fake_outline_query
+_guarded = parcels.outlines(-86.5, 35.5, -85.5, 36.5)
+_parcels_mod.arcgis_query_all = _orig_qa
+check("oversized outline viewport is refused without querying",
+      _guarded["features"] == [] and "Zoom in" in _guarded["error"]
+      and not _outline_calls)
+check("outlines API route exists",
+      all(p in _insp2.signature(_server2.outlines).parameters
+          for p in ("minlon", "minlat", "maxlon", "maxlat")))
+
 from tnland import roadsearch
 
 # Road results must sort raw land first, then by descending acreage.

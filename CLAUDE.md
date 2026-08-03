@@ -23,7 +23,7 @@ pip install -r requirements.txt
 
 python -m tnland doctor            # verify every live data source
 python -m tnland                   # run the app, opens 127.0.0.1:8823
-python selftest.py                 # 292 offline checks
+python selftest.py                 # 297 offline checks
 
 # CLI
 python -m tnland address "2926 Bryant Ridge Rd, Baxter, TN 38544"
@@ -110,7 +110,12 @@ A test computes the same shape at two longitudes and requires the same answer.
 ## Architecture
 
 **FastAPI server** (`server.py`) — routes `/api/parcel`, `/api/search/*`,
-`/api/screen`, `/api/comps`, `/api/export.csv`, `/api/config`. Serves the
+`/api/screen`, `/api/comps`, `/api/export.csv`, `/api/config`,
+`/api/outlines` (bare parcel boundaries for the browse layer:
+a "Parcel lines" map overlay fetches outlines for the viewport at
+zoom >= 14, hover shows owner + acres, and a span guard refuses
+oversized requests so browsing stays cheap for the statewide
+service -- deep layers stay click-only). Serves the
 frontend from `tnland/static/`. Binds `127.0.0.1:8823`.
 
 **Aggregation** (`analysis.py`) — `parcel_report()` is the central

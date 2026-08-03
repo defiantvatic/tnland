@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from . import analysis, cache, comps as comps_mod, config, geo, lists
 from . import build_info
 from . import progress as progress_mod
+from .sources import parcels as parcels_mod
 from .sources import parcels
 
 STATIC = Path(__file__).parent / "static"
@@ -41,6 +42,12 @@ def get_config() -> dict[str, Any]:
             for k, v in config.COUNTY_SERVICES.items()
         },
     }
+
+
+@app.get("/api/outlines")
+def outlines(minlon: float, minlat: float, maxlon: float, maxlat: float):
+    """Bare parcel boundaries for the browse layer -- geometry only."""
+    return parcels_mod.outlines(minlon, minlat, maxlon, maxlat)
 
 
 @app.get("/api/progress")
